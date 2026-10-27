@@ -43,15 +43,19 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Unit tests (разбор дат и времени)
-        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
 
       - name: Assemble signed release
-        run: >
-          ./gradlew :app:assembleRelease
-          -PappVersionCode=${{ steps.version.outputs.code }}
-          -PappVersionName=${{ steps.version.outputs.name }}
-          --no-daemon --stacktrace
-          2>&1 | tee build.log
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleRelease \
+            -PappVersionCode=${{ steps.version.outputs.code }} \
+            -PappVersionName=${{ steps.version.outputs.name }} \
+            --no-daemon --stacktrace 2>&1 | tee build.log
 
       - name: Report build log on failure
         if: failure()
