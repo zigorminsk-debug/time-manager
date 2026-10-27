@@ -141,6 +141,7 @@ object UpdateManager {
             }
         }
 
+    @Suppress("UNUSED_PARAMETER")
     suspend fun checkForUpdate(context: Context, silent: Boolean): ReleaseInfo? = withContext(Dispatchers.IO) {
         val settings = AppGraph.settings.value
         val release = fetchLatest(settings.updateChannel)

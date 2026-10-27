@@ -92,6 +92,7 @@ object PlaceMonitor {
         val canRead = hasLocationPermission(context)
 
         runCatching {
+            @Suppress("DEPRECATION")
             val info = wm.connectionInfo
             if (canRead) {
                 cleanSsid(info.ssid)?.let { names += it }

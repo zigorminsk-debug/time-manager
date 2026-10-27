@@ -85,7 +85,6 @@ object Notifications {
         task: Task,
         ongoing: Boolean,
         fullScreen: Boolean,
-        speakText: String? = null,
     ) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
 

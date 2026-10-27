@@ -275,7 +275,6 @@ fun AppRoot() {
                         onEditPlace = { placeToEdit = it; placeDialog = true },
                         onAddPlace = { placeToEdit = null; placeDialog = true },
                         onAddTaskForPlace = { place -> editing = null; placeForNewTask = place; editorOpen = true },
-                        onMessage = { scope.launch { snackbar.showSnackbar(it) } },
                     )
 
                     Tab.SETTINGS -> SettingsScreen(

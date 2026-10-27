@@ -20,10 +20,10 @@ val appVersionName = (project.findProperty("appVersionName") as String?) ?: "1.0
 val keystorePath = System.getenv("TM_KEYSTORE_FILE") ?: "keystore/timemanager-release.p12"
 val keystoreFile = rootProject.file(keystorePath)
 val hasReleaseKey = keystoreFile.exists()
-val keystorePassword = System.getenv("TM_KEYSTORE_PASSWORD") ?: "timemanager"
-val keyAliasName = System.getenv("TM_KEY_ALIAS") ?: "timemanager"
-val keyPassword = System.getenv("TM_KEY_PASSWORD") ?: keystorePassword
-val keystoreType = System.getenv("TM_KEYSTORE_TYPE") ?: "PKCS12"
+val storePasswordValue = System.getenv("TM_KEYSTORE_PASSWORD") ?: "timemanager"
+val keyAliasValue = System.getenv("TM_KEY_ALIAS") ?: "timemanager"
+val keyPasswordValue = System.getenv("TM_KEY_PASSWORD") ?: storePasswordValue
+val keystoreTypeValue = System.getenv("TM_KEYSTORE_TYPE") ?: "PKCS12"
 
 android {
     namespace = "com.zigorminsk.timemanager"
@@ -42,11 +42,11 @@ android {
     signingConfigs {
         if (hasReleaseKey) {
             create("release") {
-                storeFile = keystoreFile
-                storePassword = keystorePassword
-                keyAlias = keyAliasName
-                keyPassword = keyPassword
-                storeType = keystoreType
+                this.storeFile = keystoreFile
+                this.storePassword = storePasswordValue
+                this.keyAlias = keyAliasValue
+                this.keyPassword = keyPasswordValue
+                this.storeType = keystoreTypeValue
             }
         }
     }

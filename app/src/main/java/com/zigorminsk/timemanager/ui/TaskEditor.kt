@@ -233,7 +233,7 @@ fun TaskEditorSheet(
                     Column(Modifier.padding(12.dp)) {
                         Text(
                             "В тексте найдено: «${parsed.matchedText}» → " +
-                                RuTime.formatDue(parsed.millis!!, parsed.hasTime),
+                                RuTime.formatDue(parsed.millis, parsed.hasTime),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )

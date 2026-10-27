@@ -57,7 +57,6 @@ fun PlacesScreen(
     onEditPlace: (Place) -> Unit,
     onAddPlace: () -> Unit,
     onAddTaskForPlace: (Place) -> Unit,
-    onMessage: (String) -> Unit,
 ) {
     val context = LocalContext.current
     var hasPermission by remember { mutableStateOf(PlaceMonitor.hasLocationPermission(context)) }

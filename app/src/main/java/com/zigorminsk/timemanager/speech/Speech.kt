@@ -72,6 +72,8 @@ class Speaker(context: Context) : TextToSpeech.OnInitListener {
         engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) { speaking.value = true }
             override fun onDone(utteranceId: String?) { speaking.value = false }
+            @Suppress("OVERRIDE_DEPRECATION", "DeprecatedCall")
+            @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) { speaking.value = false }
         })
         ready = true
