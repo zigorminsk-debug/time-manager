@@ -198,8 +198,11 @@ class TaskRepository(context: Context) {
         runCatching {
             val tmp = File(appContext.filesDir, "timemanager.json.tmp")
             tmp.writeText(toJson(data).toString())
-            if (file.exists()) file.delete()
-            tmp.renameTo(file)
+            // rename(2) атомарно заменяет файл — данные не потеряются при сбое
+            if (!tmp.renameTo(file)) {
+                file.writeText(toJson(data).toString())
+                tmp.delete()
+            }
         }
     }
 
