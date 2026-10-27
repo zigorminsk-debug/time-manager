@@ -77,6 +77,7 @@ fun ReminderScreen(taskId: String?, onClose: () -> Unit) {
     val now = System.currentTimeMillis()
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+        AdaptiveScreen {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -213,6 +214,7 @@ fun ReminderScreen(taskId: String?, onClose: () -> Unit) {
                 )
             }
             Spacer(Modifier.height(24.dp))
+        }
         }
     }
 }

@@ -40,6 +40,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -255,7 +258,11 @@ fun PlaceEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (place == null) "Новое место" else "Изменить место") },
         text = {
-            Column {
+            Column(
+                Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -321,7 +328,7 @@ fun PlaceEditorDialog(
             }
         },
         confirmButton = {
-            Button(onClick = {
+            TextButton(onClick = {
                 val lat = latitude.replace(',', '.').toDoubleOrNull()
                 val lon = longitude.replace(',', '.').toDoubleOrNull()
                 val wifiList = wifi.split(",", ";")
@@ -346,6 +353,6 @@ fun PlaceEditorDialog(
                 )
             }) { Text("Сохранить") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+        dismissButton = { AppTextButton(text = "Отмена", onClick = onDismiss) },
     )
 }

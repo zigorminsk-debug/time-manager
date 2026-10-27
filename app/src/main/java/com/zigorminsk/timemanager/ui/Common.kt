@@ -328,15 +328,15 @@ fun DateTimePickerDialog(
         0 -> DatePickerDialog(
             onDismissRequest = onDismiss,
             confirmButton = {
-                TextButton(onClick = {
+                AppTextButton(text = "Далее", onClick = {
                     val selected = dateState.selectedDateMillis
                         ?: pickedDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
                     pickedDate = Instant.ofEpochMilli(selected).atZone(ZoneOffset.UTC).toLocalDate()
                     step = 1
-                }) { Text("Далее") }
+                })
             },
             dismissButton = {
-                TextButton(onClick = {
+                AppTextButton(text = "Без времени", onClick = {
                     val selected = dateState.selectedDateMillis
                     if (selected != null) {
                         val date = Instant.ofEpochMilli(selected).atZone(ZoneOffset.UTC).toLocalDate()
@@ -344,7 +344,7 @@ fun DateTimePickerDialog(
                     } else {
                         onDismiss()
                     }
-                }) { Text("Без времени") }
+                })
             },
         ) {
             DatePicker(state = dateState)
