@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Тайм-менеджер</string>
+
+    <!-- Навигация -->
+    <string name="tab_today">Сегодня</string>
+    <string name="tab_all">Все задачи</string>
+    <string name="tab_archive">Архив</string>
+    <string name="tab_places">Места</string>
+    <string name="tab_settings">Настройки</string>
+
+    <!-- Задачи -->
+    <string name="new_task">Новая задача</string>
+    <string name="edit_task">Изменить задачу</string>
+    <string name="task_title_hint">Что нужно сделать?</string>
+    <string name="task_note_hint">Заметка (необязательно)</string>
+    <string name="no_tasks_today">На сегодня задач нет</string>
+    <string name="no_tasks_all">Задач пока нет</string>
+    <string name="no_tasks_archive">Архив пуст</string>
+    <string name="done">Выполнено</string>
+    <string name="archive">Архив</string>
+    <string name="delete">Удалить</string>
+    <string name="cancel">Отмена</string>
+    <string name="save">Сохранить</string>
+    <string name="move">Перенести</string>
+    <string name="postpone">Отложить</string>
+    <string name="archive_action">В архив</string>
+    <string name="restore">Вернуть в работу</string>
+    <string name="repeat">Повторять</string>
+    <string name="no_repeat">Не повторять</string>
+
+    <!-- Напоминания -->
+    <string name="mark_done">Выполнено</string>
+    <string name="snooze">Отложить</string>
+    <string name="snooze_10">10 мин</string>
+    <string name="snooze_15">15 мин</string>
+    <string name="snooze_20">20 мин</string>
+    <string name="snooze_30">30 мин</string>
+    <string name="snooze_60">1 час</string>
+    <string name="open_task">Открыть</string>
+
+    <!-- Места -->
+    <string name="places_title">Напоминания по месту</string>
+    <string name="place_add">Добавить место</string>
+    <string name="place_name">Название (например, Дом)</string>
+    <string name="place_wifi">Wi-Fi сети (через запятую)</string>
+    <string name="place_radius">Радиус, м</string>
+    <string name="place_coords">Координаты</string>
+    <string name="place_pick_on_map">Выбрать на карте</string>
+    <string name="place_current">Моё текущее положение</string>
+    <string name="place_use_current_wifi">Текущая Wi-Fi сеть</string>
+    <string name="place_empty">Добавьте место, чтобы получать напоминания по прибытии</string>
+    <string name="geofence_permission">Для напоминаний по месту нужно разрешение на местоположение («Всегда разрешать») и уведомления.</string>
+
+    <!-- Диктовка -->
+    <string name="dictate">Надиктовать</string>
+    <string name="dictate_stop">Стоп</string>
+    <string name="speech_error">Не удалось распознать речь. Проверьте, что в системе включена служба распознавания Google.</string>
+    <string name="speech_unavailable">Распознавание речи недоступно на этом устройстве</string>
+    <string name="listening">Говорите…</string>
+    <string name="parsed_recognized">Распознано: «%1$s»</string>
+
+    <!-- Время / дата -->
+    <string name="date">Дата</string>
+    <string name="time">Время</string>
+    <string name="pick_date_time">Дата и время</string>
+    <string name="no_date">Без даты (по месту)</string>
+    <string name="sounds_like_datetime">Похоже на дату/время: «%1$s» — применить?</string>
+    <string name="apply">Применить</string>
+    <string name="now">Сейчас</string>
+    <string name="today">Сегодня</string>
+    <string name="tomorrow">Завтра</string>
+
+    <!-- Конфликты -->
+    <string name="conflict_title">Пересечение по времени</string>
+    <string name="conflict_body">На это время уже запланировано: %1$s</string>
+    <string name="conflict_save_anyway">Всё равно сохранить</string>
+    <string name="conflict_pick_other">Изменить время</string>
+
+    <!-- Проговаривание -->
+    <string name="read_day">Проговорить день</string>
+    <string name="read_day_stop">Остановить</string>
+    <string name="tts_no_tasks">На сегодня задач нет. Отдыхайте!</string>
+    <string name="tts_missing_russian">Русский голос для синтеза речи не установлен. Установите его в настройках Android: «Синтез речи → Русский».</string>
+    <string name="speak_on_reminder">Проговаривать напоминания</string>
+    <string name="speak_tasks">Проговаривать задачи</string>
+
+    <!-- Настройки -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_appearance">Оформление</string>
+    <string name="settings_theme">Тема</string>
+    <string name="theme_system">Как в системе</string>
+    <string name="theme_light">Светлая</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="settings_font_scale">Размер текста</string>
+    <string name="settings_notifications">Уведомления</string>
+    <string name="settings_dnd">Уведомлять при включённом «Не беспокоить»</string>
+    <string name="settings_vibrate">Вибрация</string>
+    <string name="settings_voice">Голос</string>
+    <string name="settings_speech_rate">Скорость речи</string>
+    <string name="settings_places">Напоминания по месту</string>
+    <string name="settings_place_watch">Следить за местами в фоне</string>
+    <string name="settings_place_hint">Когда включено, приложение раз в несколько минут проверяет GPS/Wi-Fi и показывает напоминание при прибытии.</string>
+    <string name="settings_exact_alarm">Точные будильники</string>
+    <string name="settings_exact_alarm_hint">Без этого разрешения напоминания могут приходить с задержкой.</string>
+    <string name="settings_grant">Разрешить</string>
+    <string name="settings_battery">Отключить энергосбережение</string>
+    <string name="settings_battery_hint">На некоторых прошивках (Xiaomi, Huawei) нужно разрешить автозапуск, иначе напоминания по месту не сработают.</string>
+    <string name="settings_updates">Обновления</string>
+    <string name="settings_auto_update">Автообновление при выходе новой версии</string>
+    <string name="settings_check_update">Проверить обновление</string>
+    <string name="settings_check_interval">Проверять раз в</string>
+    <string name="interval_6h">6 часов</string>
+    <string name="interval_12h">12 часов</string>
+    <string name="interval_24h">24 часа</string>
+    <string name="settings_version">Версия %1$s (сборка %2$d)</string>
+    <string name="settings_channel">Канал обновлений</string>
+    <string name="channel_stable">Стабильные</string>
+    <string name="channel_beta">Бета</string>
+    <string name="settings_about">О приложении</string>
+    <string name="settings_storage">Хранилище</string>
+    <string name="settings_export">Экспорт задач (JSON)</string>
+    <string name="settings_clear_archive">Очистить архив</string>
+    <string name="settings_clear_archive_q">Удалить все задачи из архива?</string>
+
+    <!-- Обновления -->
+    <string name="update_available">Доступно обновление %1$s</string>
+    <string name="update_download">Скачать</string>
+    <string name="update_later">Позже</string>
+    <string name="update_downloading">Загрузка обновления…</string>
+    <string name="update_install_blocked">Разрешите установку из этого источника, чтобы обновить приложение.</string>
+    <string name="update_error">Не удалось проверить обновления</string>
+    <string name="update_no_new">У вас последняя версия</string>
+    <string name="update_installing">Открываю установщик…</string>
+
+    <!-- Уведомления -->
+    <string name="channel_reminders">Напоминания</string>
+    <string name="channel_reminders_desc">Уведомления о задачах</string>
+    <string name="channel_place">Напоминания по месту</string>
+    <string name="channel_place_desc">Постоянные напоминания при прибытии</string>
+    <string name="channel_placeservice">Слежение за местами</string>
+    <string name="channel_updates">Обновления</string>
+    <string name="place_watch_title">Слежение за местами включено</string>
+    <string name="place_watch_text">Жду прибытия: %1$s</string>
+    <string name="silent_ok">Тишина до выполнения</string>
+</resources>
