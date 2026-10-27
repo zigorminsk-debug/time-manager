@@ -118,7 +118,7 @@ jobs:
         run: |
           NAME="${{ steps.version.outputs.name }}"
           CODE="${{ steps.version.outputs.code }}"
-          HASH="$(cut -d' ' -f1 dist/sha256.txt)"
+          HASH="$(head -1 dist/sha256.txt | cut -d' ' -f1)"
           cat > notes.md <<EOF
           Автоматическая сборка.
 
