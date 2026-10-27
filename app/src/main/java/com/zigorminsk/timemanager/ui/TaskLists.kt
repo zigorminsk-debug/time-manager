@@ -114,11 +114,7 @@ fun ArchiveScreen(
                     modifier = Modifier.weight(1f),
                 )
                 if (archived.isNotEmpty()) {
-                    TextButton(onClick = { confirmClear = true }) {
-                        Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Очистить")
-                    }
+                    AppTextButton(text = "Очистить", onClick = { confirmClear = true })
                 }
             }
         }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -147,16 +148,26 @@ fun ReminderScreen(taskId: String?, onClose: () -> Unit) {
             Spacer(Modifier.height(32.dp))
             Text("Отложить на", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 listOf(10, 15, 20, 30).forEach { minutes ->
                     FilledTonalButton(
                         onClick = {
                             task?.let { ReminderEngine.snooze(applicationContextForAction(), it.id, minutes) }
                             onClose()
                         },
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
-                        modifier = Modifier.weight(1f),
-                    ) { Text("$minutes") }
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.weight(1f).heightIn(min = Dims.Button),
+                    ) {
+                        Text(
+                            "$minutes",
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -168,7 +179,7 @@ fun ReminderScreen(taskId: String?, onClose: () -> Unit) {
                     task?.let { ReminderEngine.complete(applicationContextForAction(), it.id) }
                     onClose()
                 },
-                modifier = Modifier.fillMaxWidth().height(60.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
                 shape = RoundedCornerShape(18.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.secondary,
@@ -181,21 +192,25 @@ fun ReminderScreen(taskId: String?, onClose: () -> Unit) {
             }
 
             Spacer(Modifier.height(8.dp))
-            TextButton(
-                onClick = {
-                    val context = applicationContextForAction()
-                    val intent = Intent(context, MainActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                        taskId?.let { putExtra(Notifications.EXTRA_TASK_ID, it) }
-                    }
-                    context.startActivity(intent)
-                    onClose()
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Открыть задачу") }
-
-            TextButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
-                Text("Закрыть без изменений")
+            EqualButtonRow {
+                SecondaryButton(
+                    text = "Открыть задачу",
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        val context = applicationContextForAction()
+                        val intent = Intent(context, MainActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                            taskId?.let { putExtra(Notifications.EXTRA_TASK_ID, it) }
+                        }
+                        context.startActivity(intent)
+                        onClose()
+                    },
+                )
+                SecondaryButton(
+                    text = "Закрыть",
+                    modifier = Modifier.weight(1f),
+                    onClick = onClose,
+                )
             }
             Spacer(Modifier.height(24.dp))
         }

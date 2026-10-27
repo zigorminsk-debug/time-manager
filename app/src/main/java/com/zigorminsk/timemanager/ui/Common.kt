@@ -3,6 +3,7 @@ package com.zigorminsk.timemanager.ui
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimeInput
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
@@ -64,6 +68,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.zigorminsk.timemanager.model.Task
 import com.zigorminsk.timemanager.util.RuTime
 import kotlinx.coroutines.delay
@@ -158,6 +163,7 @@ fun EmptyState(title: String, subtitle: String? = null, emoji: String = "🗒️
 /**
  * Карточка задачи со всеми действиями.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TaskCard(
     task: Task,
@@ -219,7 +225,10 @@ fun TaskCard(
                     )
                 }
                 Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     task.dueAt?.let { due ->
                         MetaChip(
                             text = RuTime.formatDue(due, task.hasTime, now),
@@ -340,18 +349,41 @@ fun DateTimePickerDialog(
             DatePicker(state = dateState)
         }
 
-        1 -> Dialog(onDismissRequest = onDismiss) {
-            Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surface) {
-                Column(Modifier.padding(20.dp)) {
+        1 -> Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .widthIn(max = 400.dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
                     Text("Время", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(12.dp))
-                    TimePicker(state = timeState)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = onDismiss) { Text("Отмена") }
-                        Spacer(Modifier.width(8.dp))
-                        Button(onClick = {
-                            onPicked(RuTime.combine(pickedDate, timeState.hour, timeState.minute), true)
-                        }) { Text("Готово") }
+                    // Классический циферблат требует ~328 dp — на узких экранах используем компактный ввод
+                    if (isCompactWidth()) {
+                        TimeInput(state = timeState, is24Hour = true)
+                    } else {
+                        TimePicker(state = timeState)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    EqualButtonRow {
+                        SecondaryButton(text = "Отмена", modifier = Modifier.weight(1f), onClick = onDismiss)
+                        PrimaryButton(
+                            text = "Готово",
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                onPicked(RuTime.combine(pickedDate, timeState.hour, timeState.minute), true)
+                            },
+                        )
                     }
                 }
             }
@@ -400,12 +432,14 @@ fun MoveTaskDialog(
                     Spacer(Modifier.height(12.dp))
                     val quick = quickOptions()
                     quick.forEach { (label, millis) ->
-                        TextButton(
+                        OutlinedButton(
                             onClick = { onMoved(millis, true) },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = Dims.ButtonSmall),
+                            shape = RoundedCornerShape(12.dp),
                         ) {
-                            Text(label, modifier = Modifier.fillMaxWidth())
+                            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
                         }
+                        Spacer(Modifier.height(6.dp))
                     }
                 }
             },
@@ -428,15 +462,15 @@ fun quickOptions(): List<Pair<String, Long>> {
     val today: LocalDate = RuTime.today(zone)
     val now = System.currentTimeMillis()
     return listOf(
-        "Через 30 минут" to now + 30 * 60_000L,
-        "Через час" to now + 60 * 60_000L,
-        "Через 2 часа" to now + 120 * 60_000L,
-        "Сегодня вечером, 19:00" to if (RuTime.combine(today, 19, 0) > now) {
+        "через 30 мин" to now + 30 * 60_000L,
+        "через час" to now + 60 * 60_000L,
+        "через 2 часа" to now + 120 * 60_000L,
+        "вечером в 19:00" to if (RuTime.combine(today, 19, 0) > now) {
             RuTime.combine(today, 19, 0)
         } else {
             RuTime.combine(today.plusDays(1), 19, 0)
         },
-        "Завтра утром, 09:00" to RuTime.combine(today.plusDays(1), 9, 0),
+        "завтра в 09:00" to RuTime.combine(today.plusDays(1), 9, 0),
     )
 }
 

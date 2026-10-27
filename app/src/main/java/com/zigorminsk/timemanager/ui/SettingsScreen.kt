@@ -68,16 +68,18 @@ fun SettingsScreen(
         item {
             SettingsCard("Оформление") {
                 Text("Тема", style = MaterialTheme.typography.bodyMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     listOf(
-                        Settings.THEME_SYSTEM to "Как в системе",
+                        Settings.THEME_SYSTEM to "Системная",
                         Settings.THEME_LIGHT to "Светлая",
                         Settings.THEME_DARK to "Тёмная",
                     ).forEach { (value, label) ->
-                        FilterChip(
+                        AppFilterChip(
                             selected = settings.themeMode == value,
+                            text = label,
+                            modifier = Modifier.weight(1f),
                             onClick = { onSettings { it.copy(themeMode = value) } },
-                            label = { Text(label) },
                         )
                     }
                 }
@@ -138,11 +140,12 @@ fun SettingsScreen(
                     valueRange = 0.6f..1.6f,
                     steps = 9,
                 )
-                OutlinedButton(onClick = onSpeakTest, modifier = Modifier.fillMaxWidth()) {
-                    Icon(AppIcons.Speaker, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Проверить голос")
-                }
+                SecondaryButton(
+                    text = "Проверить голос",
+                    icon = AppIcons.Speaker,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onSpeakTest,
+                )
             }
         }
 
@@ -191,41 +194,50 @@ fun SettingsScreen(
                 ) { value -> onSettings { it.copy(autoUpdate = value) } }
 
                 Text("Канал обновлений", style = MaterialTheme.typography.bodyMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    AppFilterChip(
                         selected = settings.updateChannel == "stable",
+                        text = "Стабильные",
+                        modifier = Modifier.weight(1f),
                         onClick = { onSettings { it.copy(updateChannel = "stable") } },
-                        label = { Text("Стабильные") },
                     )
-                    FilterChip(
+                    AppFilterChip(
                         selected = settings.updateChannel == "beta",
+                        text = "Бета",
+                        modifier = Modifier.weight(1f),
                         onClick = { onSettings { it.copy(updateChannel = "beta") } },
-                        label = { Text("Бета") },
                     )
                 }
                 Spacer(Modifier.height(8.dp))
                 Text("Проверять раз в", style = MaterialTheme.typography.bodyMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     listOf(6, 12, 24).forEach { hours ->
-                        FilterChip(
+                        AppFilterChip(
                             selected = settings.updateIntervalHours == hours,
+                            text = "$hours ч",
+                            modifier = Modifier.weight(1f),
                             onClick = {
                                 onSettings { it.copy(updateIntervalHours = hours) }
                                 UpdateManager.schedulePeriodic(context, replace = true)
                             },
-                            label = { Text("$hours ч") },
                         )
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onCheckUpdate, modifier = Modifier.weight(1f)) {
-                        Text("Проверить обновление")
-                    }
+                Spacer(Modifier.height(10.dp))
+                EqualButtonRow {
+                    SecondaryButton(
+                        text = "Проверить обновление",
+                        modifier = Modifier.weight(1f),
+                        onClick = onCheckUpdate,
+                    )
                     if (latestApk != null) {
-                        Button(onClick = { UpdateManager.install(context, latestApk) }) {
-                            Text("Установить")
-                        }
+                        PrimaryButton(
+                            text = "Установить",
+                            modifier = Modifier.weight(1f),
+                            onClick = { UpdateManager.install(context, latestApk) },
+                        )
                     }
                 }
                 Spacer(Modifier.height(6.dp))
@@ -239,17 +251,19 @@ fun SettingsScreen(
 
         item {
             SettingsCard("Данные") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { exportTasks(context, onMessage) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.Share, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Экспорт")
-                    }
-                    OutlinedButton(onClick = { confirmClear = true }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Очистить архив")
-                    }
+                EqualButtonRow {
+                    SecondaryButton(
+                        text = "Экспорт",
+                        icon = Icons.Default.Share,
+                        modifier = Modifier.weight(1f),
+                        onClick = { exportTasks(context, onMessage) },
+                    )
+                    SecondaryButton(
+                        text = "Очистить архив",
+                        icon = Icons.Default.Delete,
+                        modifier = Modifier.weight(1f),
+                        onClick = { confirmClear = true },
+                    )
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
@@ -374,7 +388,7 @@ private fun ActionRow(title: String, subtitle: String?, action: String, onClick:
                 )
             }
         }
-        TextButton(onClick = onClick) { Text(action) }
+        AppTextButton(text = action, onClick = onClick)
     }
 }
 

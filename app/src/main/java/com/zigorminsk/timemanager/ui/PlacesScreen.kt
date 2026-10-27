@@ -178,20 +178,26 @@ fun PlacesScreen(
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onAddTaskForPlace(place) }) {
-                            Text("Добавить задачу")
-                        }
+                        SmallButton(
+                            text = "Добавить задачу",
+                            modifier = Modifier.weight(if (place.hasGeo) 2f else 1f),
+                            onClick = { onAddTaskForPlace(place) },
+                        )
                         if (place.hasGeo) {
-                            OutlinedButton(onClick = {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(
-                                            Intent.ACTION_VIEW,
-                                            Uri.parse("geo:${place.latitude},${place.longitude}?z=17"),
-                                        ),
-                                    )
-                                }
-                            }) { Text("На карте") }
+                            SmallButton(
+                                text = "На карте",
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    runCatching {
+                                        context.startActivity(
+                                            Intent(
+                                                Intent.ACTION_VIEW,
+                                                Uri.parse("geo:${place.latitude},${place.longitude}?z=17"),
+                                            ),
+                                        )
+                                    }
+                                },
+                            )
                         }
                     }
                 }
@@ -199,11 +205,11 @@ fun PlacesScreen(
         }
 
         item {
-            Button(
+            PrimaryButton(
+                text = "Добавить место",
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 onClick = onAddPlace,
-                modifier = Modifier.fillMaxWidth().height(52.dp).padding(top = 8.dp),
-                shape = RoundedCornerShape(16.dp),
-            ) { Text("Добавить место") }
+            )
         }
 
         item {

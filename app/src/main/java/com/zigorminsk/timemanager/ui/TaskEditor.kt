@@ -9,14 +9,17 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -198,7 +201,14 @@ fun TaskEditorSheet(
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().imePadding()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                Column(
+                    Modifier
+                        .fillMaxHeight()
+                        .widthIn(max = Dims.ContentMax)
+                        .fillMaxWidth()
+                        .imePadding(),
+                ) {
 
                 Row(
                     modifier = Modifier
@@ -249,11 +259,15 @@ fun TaskEditorSheet(
                             onClick = { dictate(DictationTarget.TITLE) },
                             label = { Text("Надиктовать задачу") },
                             leadingIcon = { Icon(AppIcons.Mic, null, Modifier.size(18.dp)) },
+                            modifier = Modifier.heightIn(min = Dims.Chip),
+                            shape = RoundedCornerShape(12.dp),
                         )
                         AssistChip(
                             onClick = { dictate(DictationTarget.DATETIME) },
                             label = { Text("Надиктовать время") },
                             leadingIcon = { Icon(AppIcons.Mic, null, Modifier.size(18.dp)) },
+                            modifier = Modifier.heightIn(min = Dims.Chip),
+                            shape = RoundedCornerShape(12.dp),
                         )
                     }
 
@@ -299,34 +313,36 @@ fun TaskEditorSheet(
                     Spacer(Modifier.height(16.dp))
                     Text("Когда напомнить", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(
-                            onClick = { showPicker = true },
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        SecondaryButton(
+                            text = dueAt?.let { RuTime.formatDue(it, hasTime) } ?: "Дата и время",
+                            icon = Icons.Default.DateRange,
                             modifier = Modifier.weight(1f),
-                        ) {
-                            Icon(Icons.Default.DateRange, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(dueAt?.let { RuTime.formatDue(it, hasTime) } ?: "Дата и время")
-                        }
-                        IconButton(onClick = { dictate(DictationTarget.DATETIME) }) {
-                            Icon(AppIcons.Mic, contentDescription = "Надиктовать дату и время")
-                        }
+                            onClick = { showPicker = true },
+                        )
+                        SquareIconButton(
+                            icon = AppIcons.Mic,
+                            description = "Надиктовать дату и время",
+                            onClick = { dictate(DictationTarget.DATETIME) },
+                        )
                         if (dueAt != null) {
-                            IconButton(onClick = { dueAt = null }) {
-                                Icon(Icons.Default.Close, contentDescription = "Убрать дату")
-                            }
+                            SquareIconButton(
+                                icon = Icons.Default.Close,
+                                description = "Убрать дату",
+                                onClick = { dueAt = null },
+                            )
                         }
                     }
 
                     Spacer(Modifier.height(8.dp))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        quickOptions().forEach { (label, millis) ->
-                            AssistChip(
-                                onClick = { dueAt = millis; hasTime = true },
-                                label = { Text(label, style = MaterialTheme.typography.labelMedium) },
-                            )
-                        }
-                    }
+                    QuickTimeGrid(onPick = { millis ->
+                        dueAt = millis
+                        hasTime = true
+                    })
 
                     Spacer(Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -346,19 +362,24 @@ fun TaskEditorSheet(
                     )
                     Spacer(Modifier.height(8.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
+                        AppFilterChip(
                             selected = placeId == null,
+                            text = "Без места",
                             onClick = { placeId = null },
-                            label = { Text("Без места") },
                         )
                         places.forEach { place ->
-                            FilterChip(
+                            AppFilterChip(
                                 selected = placeId == place.id,
+                                text = place.name.ifBlank { "Место" },
                                 onClick = { placeId = place.id },
-                                label = { Text(place.name.ifBlank { "Место" }) },
                             )
                         }
-                        AssistChip(onClick = onAddPlace, label = { Text("+ Место") })
+                        AssistChip(
+                            onClick = onAddPlace,
+                            label = { Text("+ Место") },
+                            modifier = Modifier.heightIn(min = Dims.Chip),
+                            shape = RoundedCornerShape(12.dp),
+                        )
                     }
                     if (placeId != null && dueAt == null) {
                         Spacer(Modifier.height(4.dp))
@@ -429,20 +450,15 @@ fun TaskEditorSheet(
                 }
 
                 Surface(shadowElevation = 8.dp, color = MaterialTheme.colorScheme.background) {
-                    Button(
-                        onClick = { requestSave() },
+                    PrimaryButton(
+                        text = if (task == null) "Создать задачу" else "Сохранить",
                         modifier = Modifier
                             .fillMaxWidth()
                             .navigationBarsPadding()
-                            .padding(horizontal = 20.dp, vertical = 12.dp)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(16.dp),
-                    ) {
-                        Text(
-                            if (task == null) "Создать задачу" else "Сохранить",
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                    }
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        onClick = { requestSave() },
+                    )
+                }
                 }
             }
         }

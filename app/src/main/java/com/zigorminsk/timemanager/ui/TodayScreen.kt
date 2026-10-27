@@ -85,22 +85,12 @@ fun TodayScreen(
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Spacer(Modifier.height(14.dp))
-                    Button(
+                    PrimaryButton(
+                        text = if (speaking) "Остановить" else "Проговорить день",
+                        icon = if (speaking) AppIcons.Stop else AppIcons.Speaker,
+                        modifier = Modifier.fillMaxWidth(),
                         onClick = { if (speaking) onStopSpeaking() else onSpeakDay() },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                        shape = RoundedCornerShape(14.dp),
-                    ) {
-                        Icon(
-                            if (speaking) AppIcons.Stop else AppIcons.Speaker,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (speaking) "Остановить" else "Проговорить день")
-                    }
+                    )
                 }
             }
         }

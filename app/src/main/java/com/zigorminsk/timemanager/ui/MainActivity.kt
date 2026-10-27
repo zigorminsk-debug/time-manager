@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -106,8 +107,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Tab(val title: String) {
-    TODAY("Сегодня"), ALL("Все задачи"), ARCHIVE("Архив"), PLACES("Места"), SETTINGS("Настройки")
+private enum class Tab(val title: String, val short: String) {
+    TODAY("Сегодня", "Сегодня"),
+    ALL("Все задачи", "Все"),
+    ARCHIVE("Архив", "Архив"),
+    PLACES("Места", "Места"),
+    SETTINGS("Настройки", "Настройки"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -209,30 +214,47 @@ fun AppRoot() {
                 }
             },
             bottomBar = {
-                NavigationBar {
-                    Tab.entries.forEach { item ->
-                        NavigationBarItem(
-                            selected = currentTab == item,
-                            onClick = { tab = item.name },
-                            icon = {
-                                Icon(
-                                    when (item) {
-                                        Tab.TODAY -> Icons.Default.DateRange
-                                        Tab.ALL -> AppIcons.List
-                                        Tab.ARCHIVE -> AppIcons.Archive
-                                        Tab.PLACES -> Icons.Default.Place
-                                        Tab.SETTINGS -> Icons.Default.Settings
-                                    },
-                                    contentDescription = item.title,
-                                )
-                            },
-                            label = { Text(item.title) },
-                        )
+                BoxWithConstraints {
+                    // На узком телефоне пять подписей не помещаются — оставляем только выбранную
+                    val compactBar = maxWidth < 380.dp
+                    NavigationBar {
+                        Tab.entries.forEach { item ->
+                            NavigationBarItem(
+                                selected = currentTab == item,
+                                onClick = { tab = item.name },
+                                alwaysShowLabel = false,
+                                icon = {
+                                    Icon(
+                                        when (item) {
+                                            Tab.TODAY -> Icons.Default.DateRange
+                                            Tab.ALL -> AppIcons.List
+                                            Tab.ARCHIVE -> AppIcons.Archive
+                                            Tab.PLACES -> Icons.Default.Place
+                                            Tab.SETTINGS -> Icons.Default.Settings
+                                        },
+                                        contentDescription = item.title,
+                                    )
+                                },
+                                label = if (!compactBar || currentTab == item) {
+                                    {
+                                        Text(
+                                            item.short,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
+                            )
+                        }
                     }
                 }
             },
         ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding)) {
+            AdaptiveScreen(Modifier.padding(padding)) {
+                Column(Modifier.fillMaxSize()) {
                 when (currentTab) {
                     Tab.TODAY -> TodayScreen(
                         data = data,
@@ -310,6 +332,7 @@ fun AppRoot() {
                         },
                         onMessage = { scope.launch { snackbar.showSnackbar(it) } },
                     )
+                }
                 }
             }
         }
