@@ -79,6 +79,9 @@ class PlaceWatchService : Service(), LocationListener {
             stopSelf()
             return
         }
+        // Обновляем результаты сканирования, чтобы замечать сети в зоне вещания,
+        // даже если телефон к ним не подключён (не чаще раза в 90 секунд).
+        runCatching { WifiScanner.requestScan(this) }
         runCatching { PlaceMonitor.checkArrivals(this) }
         val names = AppGraph.repo.data.places.map { it.name }
         Notifications.showPlaceService(this, names)

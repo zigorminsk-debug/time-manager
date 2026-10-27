@@ -70,7 +70,7 @@ object UpdateManager {
         data class Failed(val reason: String) : CheckOutcome
     }
 
-    internal sealed interface FetchOutcome {
+    sealed interface FetchOutcome {
         data class Found(val release: ReleaseInfo) : FetchOutcome
         data object Empty : FetchOutcome
         data class Error(val reason: String) : FetchOutcome

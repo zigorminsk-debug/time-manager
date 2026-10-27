@@ -82,8 +82,10 @@ fun PlacesScreen(
                     Text("Как это работает", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Добавьте место (дом, работа, дача) и укажите его Wi-Fi сеть или координаты. " +
-                            "Задача с таким местом всплывёт баннером, как только вы приедете, и будет висеть, пока вы её не выполните.",
+                        "Добавьте место (дом, работа, дача). В форме места показываются Wi-Fi сети, " +
+                            "которые вещают рядом и сохранены на телефоне: отметьте нужную (или укажите координаты). " +
+                            "Как только телефон окажется в зоне этой сети, придёт баннер с задачей — он будет " +
+                            "висеть, пока задачу не выполнят.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -270,25 +272,23 @@ fun PlaceEditorDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
+                // Сети, которые вещают прямо здесь: можно просто отметить нужные
+                WifiPicker(
+                    selected = wifi.split(",", ";").map { it.trim() }.filter { it.isNotBlank() },
+                    onSelectedChange = { list -> wifi = list.joinToString(", ") },
+                    onMessage = onMessage,
+                )
+                Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
                     value = wifi,
                     onValueChange = { wifi = it },
-                    label = { Text("Wi-Fi сети через запятую") },
+                    label = { Text("Wi-Fi сети (можно вписать вручную)") },
+                    supportingText = {
+                        Text("Через запятую. Достаточно одной сети — например, домашней.", style = MaterialTheme.typography.labelSmall)
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TextButton(onClick = {
-                        val names = PlaceMonitor.currentWifiNames(context)
-                            .filter { it.length < 17 || !it.contains(":") }
-                            .ifEmpty { emptyList() }
-                        if (names.isEmpty()) {
-                            onMessage("Не удалось прочитать Wi-Fi. Проверьте разрешение на геолокацию.")
-                        } else {
-                            wifi = names.joinToString(", ")
-                        }
-                    }) { Text("Взять текущую Wi-Fi") }
-                }
 
                 Spacer(Modifier.height(4.dp))
                 Text("Радиус GPS: ${radius.toInt()} м", style = MaterialTheme.typography.bodySmall)

@@ -6,13 +6,13 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
-import android.net.wifi.WifiManager
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.zigorminsk.timemanager.AppGraph
 import com.zigorminsk.timemanager.model.Place
 import com.zigorminsk.timemanager.notify.ReminderEngine
+import com.zigorminsk.timemanager.util.WifiMatcher
 
 /**
  * Определение «я на месте» по GPS-радиусу или по известным Wi-Fi сетям.
@@ -29,7 +29,8 @@ object PlaceMonitor {
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
-            PackageManager.PERMISSION_GRANTED
+            PackageManager.PERMISSION_GRANTED ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && WifiScanner.hasPermission(context))
 
     fun hasBackgroundLocation(context: Context): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
@@ -48,7 +49,9 @@ object PlaceMonitor {
             Log.w(TAG, "нет разрешения на геолокацию — проверка мест пропущена")
             return emptyList()
         }
-        val wifi = currentWifiNames(context)
+        // Если есть места, привязанные к Wi-Fi, просим систему обновить сканирование
+        val hasWifiPlace = tasks.any { repo.placeById(it.placeId)?.hasWifi == true }
+        val wifi = WifiScanner.observedNames(context, requestNewScan = hasWifiPlace)
         val location = lastLocation(context)
         val arrived = mutableListOf<Place>()
 
@@ -65,14 +68,7 @@ object PlaceMonitor {
     }
 
     fun isAtPlace(place: Place, wifiNames: Set<String>, location: Location?): Boolean {
-        if (place.hasWifi) {
-            val normalized = wifiNames.map { normalize(it) }.filter { it.isNotEmpty() }.toSet()
-            val matched = place.wifiNames.any { known ->
-                val n = normalize(known)
-                n.isNotEmpty() && normalized.any { it == n || it.startsWith(n) || n.startsWith(it) }
-            }
-            if (matched) return true
-        }
+        if (place.hasWifi && WifiMatcher.matchesAny(place.wifiNames, wifiNames)) return true
         if (place.hasGeo && location != null) {
             val results = FloatArray(1)
             Location.distanceBetween(
@@ -85,32 +81,8 @@ object PlaceMonitor {
         return false
     }
 
-    /** SSID и BSSID подключённой сети + результаты последнего сканирования. */
-    fun currentWifiNames(context: Context): Set<String> {
-        val names = mutableSetOf<String>()
-        val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager ?: return names
-        val canRead = hasLocationPermission(context)
-
-        runCatching {
-            @Suppress("DEPRECATION")
-            val info = wm.connectionInfo
-            if (canRead) {
-                cleanSsid(info.ssid)?.let { names += it }
-                cleanSsid(info.bssid)?.let { names += it }
-            }
-        }.onFailure { Log.w(TAG, "connectionInfo", it) }
-
-        if (canRead) {
-            runCatching {
-                @Suppress("DEPRECATION")
-                wm.scanResults?.forEach { result ->
-                    cleanSsid(result.SSID)?.let { names += it }
-                    cleanSsid(result.BSSID)?.let { names += it }
-                }
-            }.onFailure { Log.w(TAG, "scanResults", it) }
-        }
-        return names
-    }
+    /** Имена сетей «рядом»: подключённая + результаты сканирования (SSID и BSSID). */
+    fun currentWifiNames(context: Context): Set<String> = WifiScanner.observedNames(context)
 
     fun lastLocation(context: Context): Location? {
         if (!hasLocationPermission(context)) return null
@@ -151,13 +123,4 @@ object PlaceMonitor {
         runCatching { context.stopService(Intent(context, PlaceWatchService::class.java)) }
     }
 
-    private fun cleanSsid(raw: String?): String? {
-        if (raw.isNullOrBlank()) return null
-        val cleaned = raw.trim().trim('"')
-        if (cleaned.equals("<unknown ssid>", true) || cleaned == "0x" || cleaned.isEmpty()) return null
-        return cleaned
-    }
-
-    private fun normalize(value: String): String =
-        cleanSsid(value)?.lowercase()?.trim() ?: ""
 }
