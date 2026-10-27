@@ -20,6 +20,7 @@ import androidx.work.workDataOf
 import com.zigorminsk.timemanager.AppGraph
 import com.zigorminsk.timemanager.BuildConfig
 import com.zigorminsk.timemanager.notify.Notifications
+import com.zigorminsk.timemanager.util.VersionCompare
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -32,14 +33,24 @@ import java.util.concurrent.TimeUnit
 /**
  * Автообновление «поверх» установленной версии.
  *
- * Приложение смотрит релизы GitHub, скачивает APK (подписанный тем же ключом,
- * что и установленная версия) и передаёт его системному установщику.
+ * Источники данных (по порядку):
+ *  1. GitHub API `/releases` — даёт versionCode, описание, ссылку на APK;
+ *  2. резервный способ без API (у него лимит 60 запросов в час на IP) —
+ *     редирект `releases/latest/download/...`, из которого берётся тег версии.
+ *
+ * APK всегда подписан постоянным ключом, поэтому установщик ставит новую версию
+ * поверх старой, сохраняя задачи и настройки.
  */
 object UpdateManager {
 
     private const val TAG = "TM/Update"
     private const val WORK_CHECK = "tm-update-check"
     private const val API = "https://api.github.com/repos"
+    private const val STABLE_APK = "time-manager.apk"
+    private const val SHA_FILE = "sha256.txt"
+
+    /** Постоянные имена файлов в релизе — на них опирается резервная проверка. */
+    private const val ASSET_APK = STABLE_APK
 
     data class ReleaseInfo(
         val version: String,
@@ -48,9 +59,26 @@ object UpdateManager {
         val apkUrl: String,
         val sha256: String?,
         val pageUrl: String,
+        val source: String = "api",
     )
 
+    /** Результат проверки — чтобы интерфейс мог объяснить, что именно произошло. */
+    sealed interface CheckOutcome {
+        data class UpdateAvailable(val release: ReleaseInfo) : CheckOutcome
+        data class UpToDate(val current: String, val latest: String?) : CheckOutcome
+        data class NoReleases(val current: String) : CheckOutcome
+        data class Failed(val reason: String) : CheckOutcome
+    }
+
+    internal sealed interface FetchOutcome {
+        data class Found(val release: ReleaseInfo) : FetchOutcome
+        data object Empty : FetchOutcome
+        data class Error(val reason: String) : FetchOutcome
+    }
+
     fun repo(): String = BuildConfig.UPDATE_REPO.ifBlank { "zigorminsk-debug/time-manager" }
+
+    fun releasesPage(): String = "https://github.com/${repo()}/releases"
 
     // ------------------------------------------------------------- расписание
 
@@ -90,89 +118,162 @@ object UpdateManager {
         runCatching { WorkManager.getInstance(context).enqueue(request) }
     }
 
-    // ------------------------------------------------------------- сеть
+    // ------------------------------------------------------------- проверка
 
-    suspend fun fetchLatest(channel: String = AppGraph.settings.value.updateChannel): ReleaseInfo? =
+    /**
+     * Главная функция проверки.
+     * @param autoDownload ставить ли загрузку в очередь (для ручной проверки из UI — false,
+     *                     чтобы сразу скачать и открыть установщик).
+     */
+    suspend fun checkForUpdate(
+        context: Context,
+        silent: Boolean,
+        autoDownload: Boolean = true,
+    ): CheckOutcome =
         withContext(Dispatchers.IO) {
-            val url = URL("$API/${repo()}/releases?per_page=20")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
+            val settings = AppGraph.settings.value
+            AppGraph.settings.update { it.copy(lastUpdateCheck = System.currentTimeMillis()) }
+
+            when (val fetched = fetchLatest(settings.updateChannel)) {
+                is FetchOutcome.Error -> CheckOutcome.Failed(fetched.reason)
+                FetchOutcome.Empty -> CheckOutcome.NoReleases(BuildConfig.VERSION_NAME)
+                is FetchOutcome.Found -> {
+                    val release = fetched.release
+                    val newer = isNewer(
+                        release.versionCode,
+                        release.version,
+                        BuildConfig.VERSION_CODE,
+                        BuildConfig.VERSION_NAME,
+                    )
+                    if (!newer) {
+                        return@withContext CheckOutcome.UpToDate(
+                            current = BuildConfig.VERSION_NAME,
+                            latest = release.version,
+                        )
+                    }
+                    if (autoDownload && settings.autoUpdate) {
+                        enqueueDownload(context)
+                    } else if (!settings.autoUpdate) {
+                        Notifications.showUpdateAvailable(context, release.version, release.notes.take(400))
+                    }
+                    CheckOutcome.UpdateAvailable(release)
+                }
+            }
+        }
+
+    /** Пробует API, затем резервный способ через редирект загрузки. */
+    suspend fun fetchLatest(channel: String = AppGraph.settings.value.updateChannel): FetchOutcome =
+        withContext(Dispatchers.IO) {
+            val viaApi = fetchViaApi(channel)
+            if (viaApi is FetchOutcome.Found || viaApi is FetchOutcome.Empty) return@withContext viaApi
+
+            // API недоступен (лимит запросов, нет сети у api.github.com) — берём редирект
+            val viaRedirect = fetchViaRedirect()
+            if (viaRedirect != null) return@withContext FetchOutcome.Found(viaRedirect)
+            viaApi
+        }
+
+    private fun fetchViaApi(channel: String): FetchOutcome {
+        val url = URL("$API/${repo()}/releases?per_page=20")
+        var conn: HttpURLConnection? = null
+        return try {
+            conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 15_000
                 readTimeout = 20_000
                 requestMethod = "GET"
                 setRequestProperty("Accept", "application/vnd.github+json")
                 setRequestProperty("User-Agent", "TimeManager-Android/${BuildConfig.VERSION_NAME}")
             }
-            try {
-                if (conn.responseCode !in 200..299) {
-                    Log.w(TAG, "GitHub API ответ ${conn.responseCode}")
-                    return@withContext null
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                val reason = when (code) {
+                    403, 429 -> "GitHub ограничил частоту запросов. Попробуйте позже."
+                    404 -> "Релизы не найдены (репозиторий или релиз недоступен)."
+                    else -> "GitHub ответил кодом $code."
                 }
-                val body = conn.inputStream.bufferedReader().use { it.readText() }
-                val releases = JSONArray(body)
-                for (i in 0 until releases.length()) {
-                    val obj = releases.optJSONObject(i) ?: continue
-                    if (obj.optBoolean("draft")) continue
-                    if (channel == "stable" && obj.optBoolean("prerelease")) continue
-                    val tag = obj.optString("tag_name").removePrefix("v").removePrefix("V")
-                    val notes = obj.optString("body")
-                    val asset = obj.optJSONArray("assets")?.let { assets ->
-                        (0 until assets.length())
-                            .mapNotNull { assets.optJSONObject(it) }
-                            .firstOrNull { it.optString("name").endsWith(".apk", ignoreCase = true) }
-                    } ?: continue
-                    val code = Regex("(?i)versioncode\\D{0,4}(\\d+)").find(notes)
-                        ?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                    val sha = Regex("(?i)sha256\\D{0,4}([a-f0-9]{64})").find(notes)?.groupValues?.get(1)
-                    return@withContext ReleaseInfo(
-                        version = tag.ifBlank { "0" },
-                        versionCode = code,
-                        notes = notes,
-                        apkUrl = asset.optString("browser_download_url"),
-                        sha256 = sha,
-                        pageUrl = obj.optString("html_url"),
-                    )
-                }
-                null
-            } catch (e: Exception) {
-                Log.w(TAG, "не удалось получить релизы", e)
-                null
-            } finally {
-                conn.disconnect()
+                Log.w(TAG, "API: $code")
+                return FetchOutcome.Error(reason)
             }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            val releases = JSONArray(body)
+            for (i in 0 until releases.length()) {
+                val obj = releases.optJSONObject(i) ?: continue
+                if (obj.optBoolean("draft")) continue
+                if (channel == "stable" && obj.optBoolean("prerelease")) continue
+                val release = parseRelease(obj) ?: continue
+                return FetchOutcome.Found(release)
+            }
+            FetchOutcome.Empty
+        } catch (e: Exception) {
+            Log.w(TAG, "API недоступен", e)
+            FetchOutcome.Error("Нет связи с GitHub: ${e.message ?: e::class.java.simpleName}")
+        } finally {
+            conn?.disconnect()
         }
-
-    @Suppress("UNUSED_PARAMETER")
-    suspend fun checkForUpdate(context: Context, silent: Boolean): ReleaseInfo? = withContext(Dispatchers.IO) {
-        val settings = AppGraph.settings.value
-        val release = fetchLatest(settings.updateChannel)
-        AppGraph.settings.update { it.copy(lastUpdateCheck = System.currentTimeMillis()) }
-        if (release == null) return@withContext null
-        val newer = isNewer(release.versionCode, release.version, BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME)
-        if (!newer) return@withContext null
-        if (settings.autoUpdate) {
-            enqueueDownload(context)
-        } else {
-            Notifications.showUpdateAvailable(context, release.version, release.notes.take(400))
-        }
-        release
     }
 
-    fun isNewer(remoteCode: Int, remoteName: String, localCode: Int, localName: String): Boolean {
-        if (remoteCode > 0 && localCode > 0) return remoteCode > localCode
-        return compareVersions(remoteName, localName) > 0
+    private fun parseRelease(obj: org.json.JSONObject): ReleaseInfo? {
+        val tag = obj.optString("tag_name").removePrefix("v").removePrefix("V")
+        val notes = obj.optString("body")
+        val assets = obj.optJSONArray("assets") ?: return null
+        val assetList = (0 until assets.length()).mapNotNull { assets.optJSONObject(it) }
+        val apkAsset = assetList.firstOrNull { it.optString("name").equals(ASSET_APK, true) }
+            ?: assetList.firstOrNull { it.optString("name").endsWith(".apk", ignoreCase = true) }
+            ?: return null
+        val code = Regex("(?i)versioncode\\D{0,6}(\\d+)").find(notes)
+            ?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val sha = Regex("(?i)sha256\\D{0,6}([a-f0-9]{64})").find(notes)?.groupValues?.get(1)
+        return ReleaseInfo(
+            version = tag.ifBlank { "0" },
+            versionCode = code,
+            notes = notes,
+            apkUrl = apkAsset.optString("browser_download_url"),
+            sha256 = sha,
+            pageUrl = obj.optString("html_url"),
+            source = "api",
+        )
     }
 
-    fun compareVersions(a: String, b: String): Int {
-        fun parts(v: String) = v.removePrefix("v").substringBefore('-').split('.').mapNotNull { it.toIntOrNull() }
-        val pa = parts(a)
-        val pb = parts(b)
-        for (i in 0 until maxOf(pa.size, pb.size)) {
-            val x = pa.getOrElse(i) { 0 }
-            val y = pb.getOrElse(i) { 0 }
-            if (x != y) return x.compareTo(y)
+    /**
+     * Резервная проверка без API: `releases/latest/download/sha256.txt` отдаёт редирект,
+     * в адресе которого есть тег версии, а в теле — контрольная сумма APK.
+     */
+    private fun fetchViaRedirect(): ReleaseInfo? {
+        val shaUrl = "https://github.com/${repo()}/releases/latest/download/$SHA_FILE"
+        var conn: HttpURLConnection? = null
+        return try {
+            conn = (URL(shaUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15_000
+                readTimeout = 20_000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", "TimeManager-Android/${BuildConfig.VERSION_NAME}")
+            }
+            if (conn.responseCode !in 200..299) return null
+            val finalUrl = conn.url.toString()
+            val tag = VersionCompare.tagFromDownloadUrl(finalUrl) ?: return null
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            val sha = VersionCompare.shaForFile(text, ASSET_APK)
+            ReleaseInfo(
+                version = tag,
+                versionCode = 0,
+                notes = "Версия $tag",
+                apkUrl = "https://github.com/${repo()}/releases/latest/download/$ASSET_APK",
+                sha256 = sha,
+                pageUrl = releasesPage(),
+                source = "redirect",
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "резервная проверка не удалась", e)
+            null
+        } finally {
+            conn?.disconnect()
         }
-        return 0
     }
+
+    fun isNewer(remoteCode: Int, remoteName: String, localCode: Int, localName: String): Boolean =
+        VersionCompare.isNewer(remoteCode, remoteName, localCode, localName)
+
+    fun compareVersions(a: String, b: String): Int = VersionCompare.compare(a, b)
 
     // ------------------------------------------------------------- скачивание
 
@@ -195,8 +296,9 @@ object UpdateManager {
                 instanceFollowRedirects = true
                 setRequestProperty("User-Agent", "TimeManager-Android/${BuildConfig.VERSION_NAME}")
             }
-            if (conn.responseCode !in 200..299) {
-                Log.w(TAG, "скачивание: код ${conn.responseCode}")
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                Log.w(TAG, "скачивание: код $code (${release.apkUrl})")
                 return@withContext null
             }
             val total = conn.contentLengthLong
@@ -305,7 +407,7 @@ object UpdateManager {
     fun openReleasePage(context: Context) {
         runCatching {
             context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/${repo()}/releases"))
+                Intent(Intent.ACTION_VIEW, Uri.parse(releasesPage()))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
         }
@@ -317,9 +419,8 @@ class UpdateCheckWorker(appContext: Context, params: WorkerParameters) :
 
     override suspend fun doWork(): Result {
         AppGraph.init(applicationContext)
-        val silent = inputData.getBoolean("silent", true)
         return try {
-            UpdateManager.checkForUpdate(applicationContext, silent)
+            UpdateManager.checkForUpdate(applicationContext, inputData.getBoolean("silent", true))
             Result.success()
         } catch (e: Exception) {
             Result.retry()
@@ -333,8 +434,15 @@ class DownloadUpdateWorker(appContext: Context, params: WorkerParameters) :
     override suspend fun doWork(): Result {
         AppGraph.init(applicationContext)
         return try {
-            val release = UpdateManager.fetchLatest() ?: return Result.failure()
-            if (!UpdateManager.isNewer(release.versionCode, release.version, BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME)) {
+            val fetched = UpdateManager.fetchLatest()
+            val release = (fetched as? UpdateManager.FetchOutcome.Found)?.release ?: return Result.success()
+            if (!UpdateManager.isNewer(
+                    release.versionCode,
+                    release.version,
+                    BuildConfig.VERSION_CODE,
+                    BuildConfig.VERSION_NAME,
+                )
+            ) {
                 return Result.success()
             }
             UpdateManager.download(applicationContext, release) ?: return Result.retry()

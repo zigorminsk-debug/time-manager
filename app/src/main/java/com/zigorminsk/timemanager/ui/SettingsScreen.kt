@@ -44,6 +44,7 @@ import com.zigorminsk.timemanager.AppGraph
 import com.zigorminsk.timemanager.BuildConfig
 import com.zigorminsk.timemanager.model.Settings
 import com.zigorminsk.timemanager.util.CrashReporter
+import com.zigorminsk.timemanager.util.RuTime
 import com.zigorminsk.timemanager.place.PlaceMonitor
 import com.zigorminsk.timemanager.update.UpdateManager
 import java.io.File
@@ -245,6 +246,19 @@ fun SettingsScreen(
                     "Версия ${BuildConfig.VERSION_NAME} (сборка ${BuildConfig.VERSION_CODE})",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "Последняя проверка: " + if (settings.lastUpdateCheck == 0L) {
+                        "ещё не выполнялась"
+                    } else {
+                        RuTime.formatFull(settings.lastUpdateCheck, true)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                AppTextButton(
+                    text = "Открыть страницу релизов на GitHub",
+                    onClick = { UpdateManager.openReleasePage(context) },
                 )
             }
         }

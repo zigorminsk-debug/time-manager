@@ -314,14 +314,62 @@ fun AppRoot() {
                         onCheckUpdate = {
                             scope.launch {
                                 snackbar.showSnackbar("Проверяю обновления…")
-                                val release = runCatching { UpdateManager.checkForUpdate(context, silent = false) }.getOrNull()
-                                snackbar.showSnackbar(
-                                    when {
-                                        release != null && settings.autoUpdate -> "Скачиваю обновление ${release.version}…"
-                                        release != null -> "Доступно обновление ${release.version}"
-                                        else -> "У вас последняя версия"
-                                    },
-                                )
+                                val outcome = runCatching {
+                                    UpdateManager.checkForUpdate(context, silent = false, autoDownload = false)
+                                }.getOrElse { throwable ->
+                                    UpdateManager.CheckOutcome.Failed(
+                                        throwable.message ?: throwable::class.java.simpleName,
+                                    )
+                                }
+                                when (outcome) {
+                                    is UpdateManager.CheckOutcome.UpdateAvailable -> {
+                                        if (!AppGraph.settings.value.autoUpdate) {
+                                            snackbar.showSnackbar(
+                                                "Доступно обновление ${outcome.release.version} — скачайте вручную",
+                                                actionLabel = "Скачать",
+                                            )
+                                        } else {
+                                            snackbar.showSnackbar("Скачиваю ${outcome.release.version}…")
+                                            val file = UpdateManager.download(context, outcome.release)
+                                            if (file != null) {
+                                                snackbar.showSnackbar("Загружено — открываю установщик")
+                                                UpdateManager.install(context, file)
+                                            } else {
+                                                val action = snackbar.showSnackbar(
+                                                    "Не удалось скачать обновление",
+                                                    actionLabel = "Страница релизов",
+                                                )
+                                                if (action == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                                    UpdateManager.openReleasePage(context)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    is UpdateManager.CheckOutcome.UpToDate -> {
+                                        val latest = outcome.latest
+                                        snackbar.showSnackbar(
+                                            "Установлена последняя версия ${outcome.current}" +
+                                                if (latest != null && latest != outcome.current) " (на GitHub: $latest)" else "",
+                                        )
+                                    }
+                                    is UpdateManager.CheckOutcome.NoReleases ->
+                                        snackbar.showSnackbar(
+                                            "На GitHub пока нет опубликованных версий с APK",
+                                            actionLabel = "Релизы",
+                                        ).let { result ->
+                                            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                                UpdateManager.openReleasePage(context)
+                                            }
+                                        }
+                                    is UpdateManager.CheckOutcome.Failed -> snackbar.showSnackbar(
+                                        "Не удалось проверить обновления: ${outcome.reason}",
+                                        actionLabel = "Релизы",
+                                    ).let { result ->
+                                        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                            UpdateManager.openReleasePage(context)
+                                        }
+                                    }
+                                }
                             }
                         },
                         onSpeakTest = {

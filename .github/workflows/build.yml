@@ -88,10 +88,12 @@ jobs:
           mkdir -p dist
           APK="app/build/outputs/apk/release/app-release.apk"
           NAME="${{ steps.version.outputs.name }}"
+          # два имени: версионированное (для людей) и постоянное (для автообновления)
           cp "$APK" "dist/time-manager-${NAME}.apk"
+          cp "$APK" "dist/time-manager.apk"
           cd dist
-          sha256sum "time-manager-${NAME}.apk" | tee sha256.txt
-          echo "sha256_line=$(cat sha256.txt)" >> "$GITHUB_ENV"
+          sha256sum "time-manager-${NAME}.apk" "time-manager.apk" | tee sha256.txt
+          echo "sha256_line=$(head -1 sha256.txt)" >> "$GITHUB_ENV"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -126,9 +128,16 @@ jobs:
 
           APK подписан постоянным ключом, поэтому устанавливается поверх предыдущих версий
           и обновляется автоматически из самого приложения.
+
+          Файлы релиза:
+          - time-manager.apk — постоянное имя для автообновления;
+          - time-manager-$NAME.apk — та же сборка с версией в имени;
+          - sha256.txt — контрольные суммы.
           EOF
           gh release create "v$NAME" \
             "dist/time-manager-${NAME}.apk" \
+            "dist/time-manager.apk" \
+            "dist/sha256.txt" \
             --title "Тайм-менеджер $NAME" \
             --notes-file notes.md \
             --latest
