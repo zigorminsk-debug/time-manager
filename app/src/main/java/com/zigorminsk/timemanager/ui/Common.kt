@@ -47,6 +47,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimeInput
 import androidx.compose.material3.TimePicker
@@ -370,7 +371,7 @@ fun DateTimePickerDialog(
                     Spacer(Modifier.height(12.dp))
                     // Классический циферблат требует ~328 dp — на узких экранах используем компактный ввод
                     if (isCompactWidth()) {
-                        TimeInput(state = timeState, is24Hour = true)
+                        TimeInput(state = timeState)
                     } else {
                         TimePicker(state = timeState)
                     }

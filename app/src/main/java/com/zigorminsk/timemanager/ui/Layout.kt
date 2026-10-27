@@ -2,7 +2,6 @@ package com.zigorminsk.timemanager.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -30,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -77,8 +77,9 @@ fun AdaptiveScreen(
 
 /** true для узких экранов (телефон в портрете). */
 @Composable
-fun isCompactWidth(): Boolean = BoxWithConstraints {
-    maxWidth < 400.dp
+fun isCompactWidth(): Boolean {
+    val widthDp = LocalConfiguration.current.screenWidthDp
+    return widthDp < 400
 }
 
 /** Основная кнопка: одинаковая высота, радиус и типографика везде. */
