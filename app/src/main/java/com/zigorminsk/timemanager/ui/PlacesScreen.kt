@@ -336,11 +336,11 @@ fun PlaceEditorDialog(
                     .filter { it.isNotBlank() }
                 if (name.isBlank()) {
                     onMessage("Придумайте название месту")
-                    return@Button
+                    return@TextButton
                 }
                 if (wifiList.isEmpty() && (lat == null || lon == null)) {
                     onMessage("Укажите Wi-Fi сеть или координаты места")
-                    return@Button
+                    return@TextButton
                 }
                 onSave(
                     (place ?: Place()).copy(
