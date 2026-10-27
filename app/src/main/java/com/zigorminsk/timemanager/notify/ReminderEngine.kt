@@ -4,6 +4,7 @@ import android.content.Context
 import com.zigorminsk.timemanager.AppGraph
 import com.zigorminsk.timemanager.place.PlaceMonitor
 import com.zigorminsk.timemanager.update.UpdateManager
+import com.zigorminsk.timemanager.util.CrashReporter
 import com.zigorminsk.timemanager.util.RuTime
 
 /** Логика срабатывания напоминаний — общая для будильников, уведомлений и UI. */
@@ -22,18 +23,22 @@ object ReminderEngine {
         if (task.snoozedUntil != null && task.snoozedUntil > now) return
 
         val placeTask = ongoing || (task.placeId != null && task.dueAt == null)
-        Notifications.showTask(
-            context = context,
-            task = task,
-            ongoing = placeTask,
-            fullScreen = settings.fullScreenReminder && !placeTask,
-        )
+        runCatching {
+            Notifications.showTask(
+                context = context,
+                task = task,
+                ongoing = placeTask,
+                fullScreen = settings.fullScreenReminder && !placeTask,
+            )
+        }.onFailure { CrashReporter.log(context, "Не удалось показать уведомление", it) }
         repo.markNotified(taskId, now)
 
         if (settings.speakOnReminder) {
-            val spoken = "Напоминание. " + RuTime.speakTask(task) +
-                if (placeTask) ". Вы на месте." else ""
-            AppGraph.speaker.speak(spoken, settings.speechRate)
+            runCatching {
+                val spoken = "Напоминание. " + RuTime.speakTask(task) +
+                    if (placeTask) ". Вы на месте." else ""
+                AppGraph.speaker.speak(spoken, settings.speechRate)
+            }.onFailure { CrashReporter.log(context, "Ошибка озвучки напоминания", it) }
         }
     }
 
@@ -53,16 +58,20 @@ object ReminderEngine {
         val until = task.snoozedUntil ?: return
         val settings = AppGraph.settings.value
 
-        // Обновляем баннер: показываем, что задача отложена
-        Notifications.showTask(
-            context = context,
-            task = task,
-            ongoing = task.placeId != null && task.dueAt == null,
-            fullScreen = false,
-        )
-        AlarmScheduler.scheduleTask(context, task)
+        runCatching {
+            // Обновляем баннер: показываем, что задача отложена
+            Notifications.showTask(
+                context = context,
+                task = task,
+                ongoing = task.placeId != null && task.dueAt == null,
+                fullScreen = false,
+            )
+            AlarmScheduler.scheduleTask(context, task)
+        }.onFailure { CrashReporter.log(context, "Не удалось отложить задачу", it) }
         if (settings.speakOnReminder) {
-            AppGraph.speaker.speak("Хорошо, напомню в ${RuTime.formatTime(until)}", settings.speechRate)
+            runCatching {
+                AppGraph.speaker.speak("Хорошо, напомню в ${RuTime.formatTime(until)}", settings.speechRate)
+            }
         }
     }
 

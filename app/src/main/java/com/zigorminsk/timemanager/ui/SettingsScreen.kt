@@ -43,6 +43,7 @@ import androidx.core.content.FileProvider
 import com.zigorminsk.timemanager.AppGraph
 import com.zigorminsk.timemanager.BuildConfig
 import com.zigorminsk.timemanager.model.Settings
+import com.zigorminsk.timemanager.util.CrashReporter
 import com.zigorminsk.timemanager.place.PlaceMonitor
 import com.zigorminsk.timemanager.update.UpdateManager
 import java.io.File
@@ -57,6 +58,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     var confirmClear by remember { mutableStateOf(false) }
+    var showReport by remember { mutableStateOf(false) }
     val latestApk = remember { UpdateManager.latestApk(context) }
 
     LazyColumn(
@@ -259,6 +261,30 @@ fun SettingsScreen(
         }
 
         item {
+            SettingsCard("Диагностика") {
+                ActionRow(
+                    title = "Последняя ошибка",
+                    subtitle = if (CrashReporter.hasCrash(context)) {
+                        "Есть отчёт о сбое — откройте и отправьте его"
+                    } else {
+                        "Сбоев не зафиксировано"
+                    },
+                    action = "Показать",
+                    onClick = { showReport = true },
+                )
+                ActionRow(
+                    title = "Журнал приложения",
+                    subtitle = "Технические записи для поиска проблем",
+                    action = "Очистить",
+                    onClick = {
+                        CrashReporter.clearLog(context)
+                        onMessage("Журнал очищен")
+                    },
+                )
+            }
+        }
+
+        item {
             SettingsCard("О приложении") {
                 Text(
                     "Тайм-менеджер с голосовым вводом, напоминаниями по времени и по прибытии в место. " +
@@ -279,6 +305,10 @@ fun SettingsScreen(
                 }) { Text("Исходный код на GitHub") }
             }
         }
+    }
+
+    if (showReport) {
+        CrashReportDialog(report = CrashReporter.report(context), onDismiss = { showReport = false })
     }
 
     if (confirmClear) {

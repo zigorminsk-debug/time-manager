@@ -1,5 +1,14 @@
 package com.zigorminsk.timemanager.ui
 
+import android.content.Intent
+import android.widget.Toast
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -434,4 +443,58 @@ fun quickOptions(): List<Pair<String, Long>> {
 @Composable
 fun Dot(color: Color, size: Int = 8) {
     Box(Modifier.size(size.dp).background(color, CircleShape))
+}
+
+/** Диалог с текстом сбоя: копирование/отправка отчёта. */
+@Composable
+fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.padding(20.dp)) {
+                Text("Приложение было остановлено", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Этот текст поможет найти причину сбоя. Скопируйте его или отправьте разработчику.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
+                    Text(
+                        report,
+                        modifier = Modifier
+                            .heightIn(max = 280.dp)
+                            .verticalScroll(rememberScrollState())
+                            .padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = {
+                        clipboard.setText(AnnotatedString(report))
+                        Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+                    }) { Text("Копировать") }
+                    TextButton(onClick = { shareText(context, report) }) { Text("Отправить") }
+                    Button(onClick = onDismiss) { Text("Закрыть") }
+                }
+            }
+        }
+    }
+}
+
+fun shareText(context: android.content.Context, text: String) {
+    runCatching {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+            putExtra(Intent.EXTRA_SUBJECT, "Отчёт о сбое — Тайм-менеджер")
+        }
+        context.startActivity(
+            Intent.createChooser(send, "Отправить отчёт").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
 }

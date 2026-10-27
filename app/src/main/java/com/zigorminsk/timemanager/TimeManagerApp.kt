@@ -8,6 +8,7 @@ import com.zigorminsk.timemanager.data.TaskRepository
 import com.zigorminsk.timemanager.notify.AlarmScheduler
 import com.zigorminsk.timemanager.notify.Notifications
 import com.zigorminsk.timemanager.speech.Speaker
+import com.zigorminsk.timemanager.util.CrashReporter
 
 /** Простой «граф зависимостей» приложения. */
 object AppGraph {
@@ -40,6 +41,7 @@ class TimeManagerApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        CrashReporter.install(this)
         AppGraph.init(this)
         // Восстанавливаем будильники при каждом холодном старте — это дешёвая страховка
         // от пропущенных срабатываний после перезагрузки/обновления приложения.

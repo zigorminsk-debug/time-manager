@@ -62,6 +62,7 @@ import com.zigorminsk.timemanager.notify.Notifications
 import com.zigorminsk.timemanager.notify.ReminderEngine
 import com.zigorminsk.timemanager.place.PlaceMonitor
 import com.zigorminsk.timemanager.update.UpdateManager
+import com.zigorminsk.timemanager.util.CrashReporter
 import com.zigorminsk.timemanager.util.RuTime
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -84,11 +85,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        AppGraph.init(applicationContext)
-        ReminderEngine.checkDueNow(this)
-        PlaceMonitor.syncWatching(this)
-        UpdateManager.schedulePeriodic(this)
-        UpdateManager.maybeAutoCheck(this)
+        runCatching {
+            AppGraph.init(applicationContext)
+            ReminderEngine.checkDueNow(this)
+            PlaceMonitor.syncWatching(this)
+            UpdateManager.schedulePeriodic(this)
+            UpdateManager.maybeAutoCheck(this)
+        }.onFailure { CrashReporter.log(this, "onResume", it) }
     }
 
     private fun handleIntent(intent: Intent?) {
@@ -125,6 +128,7 @@ fun AppRoot() {
     var placeDialog by remember { mutableStateOf(false) }
     var placeToEdit by remember { mutableStateOf<Place?>(null) }
     var placeForNewTask by remember { mutableStateOf<Place?>(null) }
+    var crashReport by remember { mutableStateOf<String?>(null) }
 
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -159,6 +163,11 @@ fun AppRoot() {
     LaunchedEffect(tabRequest) {
         if (tabRequest == "places") tab = Tab.PLACES.name
         MainActivity.openTab.value = null
+    }
+    LaunchedEffect(Unit) {
+        if (CrashReporter.hasCrash(context)) {
+            crashReport = CrashReporter.report(context)
+        }
     }
     LaunchedEffect(voiceMissing) {
         if (voiceMissing) {
@@ -313,8 +322,13 @@ fun AppRoot() {
                 allTasks = data.tasks,
                 onDismiss = { editorOpen = false; editing = null; placeForNewTask = null },
                 onSave = { task ->
-                    val exists = AppGraph.repo.taskById(task.id) != null
-                    if (exists) AppGraph.repo.updateTask(task) else AppGraph.repo.addTask(task)
+                    runCatching {
+                        val exists = AppGraph.repo.taskById(task.id) != null
+                        if (exists) AppGraph.repo.updateTask(task) else AppGraph.repo.addTask(task)
+                    }.onFailure {
+                        CrashReporter.log(context, "Сохранение задачи", it)
+                        scope.launch { snackbar.showSnackbar("Не удалось сохранить: ${it.message ?: "ошибка"}") }
+                    }
                     editorOpen = false
                     editing = null
                     placeForNewTask = null
@@ -357,6 +371,16 @@ fun AppRoot() {
                     scope.launch {
                         snackbar.showSnackbar("Перенесено на ${RuTime.formatDue(millis, hasTime)}")
                     }
+                },
+            )
+        }
+
+        crashReport?.let { report ->
+            CrashReportDialog(
+                report = report,
+                onDismiss = {
+                    CrashReporter.clearCrash(context)
+                    crashReport = null
                 },
             )
         }

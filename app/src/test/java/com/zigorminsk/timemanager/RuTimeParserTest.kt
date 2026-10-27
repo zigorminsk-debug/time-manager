@@ -118,6 +118,29 @@ class RuTimeParserTest {
     fun `к 15 00`() = assertAt("2026-10-27T15:00", "к 15:00 быть в офисе")
 
     @Test
+    fun `не падает на необычных символах`() {
+        val phrases = listOf(
+            "İstanbul завтра в 10:00",
+            "ǅревний",
+            "Straße",
+            "напомни завтра в 9 утра İ",
+            "🚀 через 30 минут",
+            "1.2.3.4.5",
+            "в 25:99",
+            "31 февраля",
+            "İİİİ",
+            "",
+            " ",
+            ",.;:!?-",
+        )
+        phrases.forEach { phrase ->
+            val p = RuTimeParser.parse(phrase, now, zone)
+            // Главное — не исключение; заголовок не должен «съедаться» целиком
+            assertTrue(phrase.isBlank() || p.title.isNotBlank())
+        }
+    }
+
+    @Test
     fun `повтор каждый день`() {
         val task = Task(
             title = "зарядка",

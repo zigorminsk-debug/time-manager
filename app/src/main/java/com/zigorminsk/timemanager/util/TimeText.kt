@@ -50,6 +50,9 @@ object RuTime {
     fun capitalize(text: String): String =
         if (text.isEmpty()) text else text[0].uppercase(Locale.ROOT) + text.substring(1)
 
+    private fun zonedOrNull(millis: Long, zone: ZoneId): ZonedDateTime? =
+        runCatching { Instant.ofEpochMilli(millis).atZone(zone) }.getOrNull()
+
     /** «Сегодня, 15:30» / «3 ноября, 09:00» / «3 ноября» (без времени). */
     fun formatDue(
         millis: Long,
@@ -57,21 +60,21 @@ object RuTime {
         now: Long = System.currentTimeMillis(),
         zone: ZoneId = ZoneId.systemDefault(),
     ): String {
-        val zdt = Instant.ofEpochMilli(millis).atZone(zone)
-        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val zdt = zonedOrNull(millis, zone) ?: return "—"
+        val today = zonedOrNull(now, zone)?.toLocalDate() ?: LocalDate.now(zone)
         val dayText = capitalize(dayLabel(zdt.toLocalDate(), today))
         return if (hasTime) "$dayText, ${hhmm(zdt.hour, zdt.minute)}" else dayText
     }
 
     /** Полная дата «3 ноября 2026, 15:30» — для карточек и озвучки. */
     fun formatFull(millis: Long, hasTime: Boolean, zone: ZoneId = ZoneId.systemDefault()): String {
-        val zdt = Instant.ofEpochMilli(millis).atZone(zone)
+        val zdt = zonedOrNull(millis, zone) ?: return "—"
         val base = "${zdt.dayOfMonth} ${MONTHS_GEN[zdt.monthValue - 1]} ${zdt.year}"
         return if (hasTime) "$base, ${hhmm(zdt.hour, zdt.minute)}" else base
     }
 
     fun formatTime(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String {
-        val zdt = Instant.ofEpochMilli(millis).atZone(zone)
+        val zdt = zonedOrNull(millis, zone) ?: return "—"
         return hhmm(zdt.hour, zdt.minute)
     }
 
@@ -81,12 +84,12 @@ object RuTime {
         LocalDateTime.of(date, LocalTime.of(hour, minute)).atZone(zone).toInstant().toEpochMilli()
 
     fun dateOf(millis: Long, zone: ZoneId = ZoneId.systemDefault()): LocalDate =
-        Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
+        zonedOrNull(millis, zone)?.toLocalDate() ?: LocalDate.now(zone)
 
     /** Следующее срабатывание повторяющейся задачи. */
     fun nextRepeatMillis(task: Task, zone: ZoneId = ZoneId.systemDefault()): Long? {
         val due = task.dueAt ?: return null
-        val zdt = Instant.ofEpochMilli(due).atZone(zone)
+        val zdt = zonedOrNull(due, zone) ?: return null
         val next: ZonedDateTime = when (task.repeat) {
             RepeatRule.NONE -> return null
             RepeatRule.DAILY -> zdt.plusDays(1)
@@ -111,8 +114,8 @@ object RuTime {
     ): String {
         val sb = StringBuilder(task.title)
         task.dueAt?.let { due ->
-            val zdt = Instant.ofEpochMilli(due).atZone(zone)
-            val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+            val zdt = zonedOrNull(due, zone) ?: return@let
+            val today = zonedOrNull(now, zone)?.toLocalDate() ?: LocalDate.now(zone)
             sb.append(", ").append(dayLabel(zdt.toLocalDate(), today))
             if (task.hasTime) {
                 sb.append(" в ").append(zdt.hour)
@@ -180,8 +183,10 @@ object RuTimeParser {
         now: Long = System.currentTimeMillis(),
         zone: ZoneId = ZoneId.systemDefault(),
     ): Parsed {
-        val lower = raw.lowercase(Locale.ROOT).replace('ё', 'е')
-        var work = lower
+        // Нижний регистр — посимвольно (1:1), чтобы индексы в work и out всегда совпадали:
+        // некоторые символы (İ, ǅ…) при lowercase() меняют длину строки, и вырезание
+        // найденных фрагментов падало с StringIndexOutOfBoundsException.
+        var work = foldToLower(raw)
         var out = raw
         var matched: String? = null
 
@@ -479,6 +484,19 @@ object RuTimeParser {
             matchedText = matched?.replace(Regex("(?U)\\s+"), " ")?.trim()?.ifBlank { null },
             relativeMinutes = relativeMinutes,
         )
+    }
+
+    /** Посимвольное приведение к нижнему регистру с сохранением длины строки. */
+    private fun foldToLower(text: String): String {
+        val chars = CharArray(text.length)
+        for (i in text.indices) {
+            val c = text[i]
+            chars[i] = when (c) {
+                'ё', 'Ё' -> 'е'
+                else -> c.lowercaseChar()
+            }
+        }
+        return String(chars)
     }
 
     private fun nextYearFor(month: Int, day: Int, today: LocalDate): Int {

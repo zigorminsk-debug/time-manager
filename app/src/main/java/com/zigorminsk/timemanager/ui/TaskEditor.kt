@@ -3,11 +3,13 @@ package com.zigorminsk.timemanager.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -32,14 +34,12 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,17 +50,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.zigorminsk.timemanager.model.Place
 import com.zigorminsk.timemanager.model.Priority
 import com.zigorminsk.timemanager.model.RepeatRule
 import com.zigorminsk.timemanager.model.Task
 import com.zigorminsk.timemanager.speech.Dictation
 import com.zigorminsk.timemanager.util.Conflicts
+import com.zigorminsk.timemanager.util.CrashReporter
 import com.zigorminsk.timemanager.util.RuTime
 import com.zigorminsk.timemanager.util.RuTimeParser
 
 private enum class DictationTarget { TITLE, NOTE, DATETIME }
 
+/**
+ * Форма создания/редактирования задачи: полноэкранный диалог, чтобы кнопка сохранения
+ * всегда была на виду и ничего не перекрывалось клавиатурой.
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun TaskEditorSheet(
@@ -74,7 +81,6 @@ fun TaskEditorSheet(
     onMessage: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var title by remember { mutableStateOf(task?.title ?: "") }
     var note by remember { mutableStateOf(task?.note ?: "") }
@@ -91,8 +97,17 @@ fun TaskEditorSheet(
     var confirmConflict by remember { mutableStateOf(false) }
     var dictationTarget by remember { mutableStateOf(DictationTarget.TITLE) }
 
-    val parsed = remember(title) { RuTimeParser.parse(title) }
-    val conflictList = remember(dueAt, allTasks, task?.id) { Conflicts.find(allTasks, dueAt, task?.id) }
+    // Разбор написанного/надиктованного текста. Ошибка разбора не должна ронять приложение.
+    val parsed = remember(title) {
+        runCatching { RuTimeParser.parse(title) }
+            .getOrElse {
+                CrashReporter.log(context, "Не удалось разобрать текст задачи", it)
+                RuTimeParser.Parsed(null, false, title, null)
+            }
+    }
+    val conflictList = remember(dueAt, allTasks, task?.id) {
+        runCatching { Conflicts.find(allTasks, dueAt, task?.id) }.getOrDefault(emptyList())
+    }
 
     val speechLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -105,9 +120,8 @@ fun TaskEditorSheet(
         when (dictationTarget) {
             DictationTarget.TITLE -> {
                 title = text
-                // Если в тексте есть дата/время и пользователь ещё не выбрал её вручную — применяем сразу
-                val p = RuTimeParser.parse(text)
-                if (p.millis != null) {
+                val p = runCatching { RuTimeParser.parse(text) }.getOrNull()
+                if (p?.millis != null) {
                     dueAt = p.millis
                     hasTime = p.hasTime
                     title = p.title
@@ -117,8 +131,8 @@ fun TaskEditorSheet(
                 note = if (note.isBlank()) text else "$note. $text"
             }
             DictationTarget.DATETIME -> {
-                val p = RuTimeParser.parse(text)
-                if (p.millis == null) {
+                val p = runCatching { RuTimeParser.parse(text) }.getOrNull()
+                if (p?.millis == null) {
                     onMessage("Не понял дату. Скажите, например: «завтра в три часа дня»")
                 } else {
                     dueAt = p.millis
@@ -144,18 +158,23 @@ fun TaskEditorSheet(
     }
 
     fun doSave() {
-        val place = places.firstOrNull { it.id == placeId }
-        val result = (task ?: Task()).copy(
-            title = title.trim(),
-            note = note.trim(),
-            dueAt = dueAt,
-            hasTime = if (dueAt == null) true else hasTime,
-            placeId = placeId,
-            placeName = place?.name ?: "",
-            repeat = repeat,
-            priority = if (important) Priority.HIGH else Priority.NORMAL,
-        )
-        onSave(result)
+        try {
+            val place = places.firstOrNull { it.id == placeId }
+            val result = (task ?: Task()).copy(
+                title = title.trim(),
+                note = note.trim(),
+                dueAt = dueAt,
+                hasTime = if (dueAt == null) true else hasTime,
+                placeId = placeId,
+                placeName = place?.name ?: "",
+                repeat = repeat,
+                priority = if (important) Priority.HIGH else Priority.NORMAL,
+            )
+            onSave(result)
+        } catch (t: Throwable) {
+            CrashReporter.log(context, "Ошибка сохранения задачи", t)
+            onMessage("Не удалось сохранить задачу: ${t.message ?: t::class.java.simpleName}")
+        }
     }
 
     fun requestSave() {
@@ -174,229 +193,258 @@ fun TaskEditorSheet(
         doSave()
     }
 
-    ModalBottomSheet(
+    Dialog(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .navigationBarsPadding()
-                .imePadding(),
-        ) {
-            Text(
-                if (task == null) "Новая задача" else "Изменить задачу",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.height(12.dp))
+        Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().imePadding()) {
 
-            OutlinedTextField(
-                value = title,
-                onValueChange = { title = it; errorText = null },
-                label = { Text("Что нужно сделать?") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 1,
-                maxLines = 4,
-                isError = errorText != null,
-                supportingText = errorText?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
-                trailingIcon = {
-                    IconButton(onClick = { dictate(DictationTarget.TITLE) }) {
-                        Icon(AppIcons.Mic, contentDescription = "Надиктовать", tint = MaterialTheme.colorScheme.primary)
-                    }
-                },
-            )
-
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AssistChip(
-                    onClick = { dictate(DictationTarget.TITLE) },
-                    label = { Text("Надиктовать задачу") },
-                    leadingIcon = { Icon(AppIcons.Mic, null, Modifier.size(18.dp)) },
-                )
-                AssistChip(
-                    onClick = { dictate(DictationTarget.DATETIME) },
-                    label = { Text("Надиктовать время") },
-                    leadingIcon = { Icon(AppIcons.Mic, null, Modifier.size(18.dp)) },
-                )
-            }
-
-            if (parsed.millis != null && parsed.matchedText != null && dueAt != parsed.millis) {
-                Spacer(Modifier.height(8.dp))
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth(),
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(
-                            "В тексте найдено: «${parsed.matchedText}» → " +
-                                RuTime.formatDue(parsed.millis, parsed.hasTime),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    Text(
+                        if (task == null) "Новая задача" else "Изменить задачу",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Закрыть")
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp),
+                ) {
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it; errorText = null },
+                        label = { Text("Что нужно сделать?") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 1,
+                        maxLines = 4,
+                        isError = errorText != null,
+                        supportingText = errorText?.let { message ->
+                            { Text(message, color = MaterialTheme.colorScheme.error) }
+                        },
+                        trailingIcon = {
+                            IconButton(onClick = { dictate(DictationTarget.TITLE) }) {
+                                Icon(AppIcons.Mic, contentDescription = "Надиктовать", tint = MaterialTheme.colorScheme.primary)
+                            }
+                        },
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AssistChip(
+                            onClick = { dictate(DictationTarget.TITLE) },
+                            label = { Text("Надиктовать задачу") },
+                            leadingIcon = { Icon(AppIcons.Mic, null, Modifier.size(18.dp)) },
                         )
-                        TextButton(onClick = {
-                            dueAt = parsed.millis
-                            hasTime = parsed.hasTime
-                            title = parsed.title
-                        }) { Text("Применить и убрать из названия") }
+                        AssistChip(
+                            onClick = { dictate(DictationTarget.DATETIME) },
+                            label = { Text("Надиктовать время") },
+                            leadingIcon = { Icon(AppIcons.Mic, null, Modifier.size(18.dp)) },
+                        )
                     }
-                }
-            }
 
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = note,
-                onValueChange = { note = it },
-                label = { Text("Заметка (необязательно)") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 1,
-                maxLines = 3,
-                trailingIcon = {
-                    IconButton(onClick = { dictate(DictationTarget.NOTE) }) {
-                        Icon(AppIcons.Mic, contentDescription = "Надиктовать заметку")
+                    val parsedMillis = parsed.millis
+                    if (parsedMillis != null && parsed.matchedText != null && dueAt != parsedMillis) {
+                        Spacer(Modifier.height(8.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text(
+                                    "В тексте найдено: «${parsed.matchedText}» → " +
+                                        RuTime.formatDue(parsedMillis, parsed.hasTime),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                                TextButton(onClick = {
+                                    dueAt = parsedMillis
+                                    hasTime = parsed.hasTime
+                                    title = parsed.title
+                                }) { Text("Применить и убрать из названия") }
+                            }
+                        }
                     }
-                },
-            )
 
-            Spacer(Modifier.height(16.dp))
-            Text("Когда напомнить", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(
-                    onClick = { showPicker = true },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Default.DateRange, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        dueAt?.let { RuTime.formatDue(it, hasTime) } ?: "Дата и время",
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = note,
+                        onValueChange = { note = it },
+                        label = { Text("Заметка (необязательно)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 1,
+                        maxLines = 3,
+                        trailingIcon = {
+                            IconButton(onClick = { dictate(DictationTarget.NOTE) }) {
+                                Icon(AppIcons.Mic, contentDescription = "Надиктовать заметку")
+                            }
+                        },
                     )
-                }
-                IconButton(onClick = { dictate(DictationTarget.DATETIME) }) {
-                    Icon(AppIcons.Mic, contentDescription = "Надиктовать дату и время")
-                }
-                if (dueAt != null) {
-                    IconButton(onClick = { dueAt = null }) {
-                        Icon(Icons.Default.Close, contentDescription = "Убрать дату")
+
+                    Spacer(Modifier.height(16.dp))
+                    Text("Когда напомнить", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(
+                            onClick = { showPicker = true },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Default.DateRange, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(dueAt?.let { RuTime.formatDue(it, hasTime) } ?: "Дата и время")
+                        }
+                        IconButton(onClick = { dictate(DictationTarget.DATETIME) }) {
+                            Icon(AppIcons.Mic, contentDescription = "Надиктовать дату и время")
+                        }
+                        if (dueAt != null) {
+                            IconButton(onClick = { dueAt = null }) {
+                                Icon(Icons.Default.Close, contentDescription = "Убрать дату")
+                            }
+                        }
                     }
-                }
-            }
 
-            Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                quickOptions().forEach { (label, millis) ->
-                    AssistChip(
-                        onClick = { dueAt = millis; hasTime = true },
-                        label = { Text(label, style = MaterialTheme.typography.labelMedium) },
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Place, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.secondary)
-                Spacer(Modifier.width(6.dp))
-                Text("Напомнить по прибытии", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Уведомление придёт, когда телефон окажется рядом с местом (по GPS или Wi-Fi).",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = placeId == null,
-                    onClick = { placeId = null },
-                    label = { Text("Без места") },
-                )
-                places.forEach { place ->
-                    FilterChip(
-                        selected = placeId == place.id,
-                        onClick = { placeId = place.id },
-                        label = { Text(place.name.ifBlank { "Место" }) },
-                    )
-                }
-                AssistChip(onClick = onAddPlace, label = { Text("+ Место") })
-            }
-            if (placeId != null && dueAt == null) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Напомним, когда приедете — время не нужно.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Повторять", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        if (repeat == RepeatRule.NONE) "Задача одноразовая" else repeat.label(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                androidx.compose.foundation.layout.Box {
-                    OutlinedButton(onClick = { repeatMenu = true }, enabled = dueAt != null) {
-                        Text(repeat.label())
-                    }
-                    DropdownMenu(expanded = repeatMenu, onDismissRequest = { repeatMenu = false }) {
-                        RepeatRule.entries.forEach { rule ->
-                            DropdownMenuItem(
-                                text = { Text(rule.label()) },
-                                onClick = { repeat = rule; repeatMenu = false },
+                    Spacer(Modifier.height(8.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        quickOptions().forEach { (label, millis) ->
+                            AssistChip(
+                                onClick = { dueAt = millis; hasTime = true },
+                                label = { Text(label, style = MaterialTheme.typography.labelMedium) },
                             )
                         }
                     }
-                }
-            }
 
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Важное напоминание", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Place, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Напомнить по прибытии",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        "Показать поверх экрана блокировки",
+                        "Уведомление придёт, когда телефон окажется рядом с местом (по GPS или Wi-Fi).",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-                Switch(checked = important, onCheckedChange = { important = it })
-            }
+                    Spacer(Modifier.height(8.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = placeId == null,
+                            onClick = { placeId = null },
+                            label = { Text("Без места") },
+                        )
+                        places.forEach { place ->
+                            FilterChip(
+                                selected = placeId == place.id,
+                                onClick = { placeId = place.id },
+                                label = { Text(place.name.ifBlank { "Место" }) },
+                            )
+                        }
+                        AssistChip(onClick = onAddPlace, label = { Text("+ Место") })
+                    }
+                    if (placeId != null && dueAt == null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Напомним, когда приедете — время не нужно.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
 
-            if (conflictList.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
-                Surface(
-                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        "Пересекается по времени: " + conflictList.joinToString(", ") {
-                            "${it.title} (${it.dueAt?.let { d -> RuTime.formatDue(d, it.hasTime) }})"
-                        },
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Повторять", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (repeat == RepeatRule.NONE) "Задача одноразовая" else repeat.label(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Box {
+                            OutlinedButton(onClick = { repeatMenu = true }, enabled = dueAt != null) {
+                                Text(repeat.label())
+                            }
+                            DropdownMenu(expanded = repeatMenu, onDismissRequest = { repeatMenu = false }) {
+                                RepeatRule.entries.forEach { rule ->
+                                    DropdownMenuItem(
+                                        text = { Text(rule.label()) },
+                                        onClick = { repeat = rule; repeatMenu = false },
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Важное напоминание", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Показать поверх экрана блокировки",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = important, onCheckedChange = { important = it })
+                    }
+
+                    if (conflictList.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                "Пересекается по времени: " + conflictList.joinToString(", ") {
+                                    "${it.title} (${it.dueAt?.let { d -> RuTime.formatDue(d, it.hasTime) }})"
+                                },
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(24.dp))
+                }
+
+                Surface(shadowElevation = 8.dp, color = MaterialTheme.colorScheme.background) {
+                    Button(
+                        onClick = { requestSave() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 20.dp, vertical = 12.dp)
+                            .height(52.dp),
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        Text(
+                            if (task == null) "Создать задачу" else "Сохранить",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
                 }
             }
-
-            Spacer(Modifier.height(20.dp))
-            Button(
-                onClick = { requestSave() },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(16.dp),
-            ) {
-                Text(if (task == null) "Создать задачу" else "Сохранить", style = MaterialTheme.typography.titleMedium)
-            }
-            Spacer(Modifier.height(24.dp))
         }
     }
 
