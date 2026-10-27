@@ -1,0 +1,103 @@
+name: Build & Release APK
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version_name: ${{ steps.version.outputs.name }}
+      version_code: ${{ steps.version.outputs.code }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute version
+        id: version
+        run: |
+          RUN="${{ github.run_number }}"
+          CODE="$((1000 + RUN))"
+          NAME="1.0.${RUN}"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Версия: $NAME ($CODE)"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests (разбор дат и времени)
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Assemble signed release
+        run: >
+          ./gradlew :app:assembleRelease
+          -PappVersionCode=${{ steps.version.outputs.code }}
+          -PappVersionName=${{ steps.version.outputs.name }}
+          --no-daemon --stacktrace
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p dist
+          APK="app/build/outputs/apk/release/app-release.apk"
+          NAME="${{ steps.version.outputs.name }}"
+          cp "$APK" "dist/time-manager-${NAME}.apk"
+          cd dist
+          sha256sum "time-manager-${NAME}.apk" | tee sha256.txt
+          echo "sha256_line=$(cat sha256.txt)" >> "$GITHUB_ENV"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: time-manager-${{ steps.version.outputs.name }}
+          path: dist/*
+          retention-days: 90
+
+      - name: Verify APK signature
+        run: |
+          BT="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          if [ -x "$BT" ]; then
+            "$BT" verify --print-certs "dist/time-manager-${{ steps.version.outputs.name }}.apk"
+          else
+            echo "apksigner не найден — пропускаем"
+          fi
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NAME="${{ steps.version.outputs.name }}"
+          CODE="${{ steps.version.outputs.code }}"
+          HASH="$(cut -d' ' -f1 dist/sha256.txt)"
+          cat > notes.md <<EOF
+          Автоматическая сборка.
+
+          versionCode: $CODE
+          versionName: $NAME
+          sha256: $HASH
+
+          APK подписан постоянным ключом, поэтому устанавливается поверх предыдущих версий
+          и обновляется автоматически из самого приложения.
+          EOF
+          gh release create "v$NAME" \
+            "dist/time-manager-${NAME}.apk" \
+            --title "Тайм-менеджер $NAME" \
+            --notes-file notes.md \
+            --latest
