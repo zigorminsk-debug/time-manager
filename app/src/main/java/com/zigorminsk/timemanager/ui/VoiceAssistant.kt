@@ -341,7 +341,7 @@ private fun VoiceStage(state: VoiceUiState, compact: Boolean = false) {
             level = if (activeListening || state.phase == VoicePhase.SPEAKING) level else 0.12f,
             pulse = pulse,
             thinking = state.phase == VoicePhase.THINKING,
-            size = if (compact) 140.dp else 210.dp,
+            diameter = if (compact) 140.dp else 210.dp,
         )
         if (!compact) {
             Spacer(Modifier.height(6.dp))
@@ -367,9 +367,9 @@ private fun VoiceOrb(
     level: Float,
     pulse: Float,
     thinking: Boolean,
-    size: androidx.compose.ui.unit.Dp = 210.dp,
+    diameter: androidx.compose.ui.unit.Dp = 210.dp,
 ) {
-    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(diameter), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2f, size.height / 2f)
             val base = size.minDimension / 2f
@@ -412,7 +412,7 @@ private fun VoiceOrb(
                 AppIcons.Mic,
                 contentDescription = null,
                 tint = Color.White,
-                modifier = Modifier.size(safeIconSize(size)),
+                modifier = Modifier.size(safeIconSize(diameter)),
             )
         }
     }
