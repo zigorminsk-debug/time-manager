@@ -105,14 +105,15 @@ object WakeWord {
     fun isStop(text: String): Boolean {
         val n = normalize(text)
         if (n.isBlank()) return false
-        return STOP_WORDS.any { word ->
+        for (word in STOP_WORDS) {
             if (n == word) return true
-            if (!n.startsWith("$word ")) return false
+            if (!n.startsWith("$word ")) continue
             // «замолчи, пожалуйста», «стоп уже» — ещё остановка;
             // «стоп-кран купить» — уже команда, а не остановка.
             val rest = n.removePrefix("$word ").split(" ").filter { it.isNotBlank() }
-            rest.isNotEmpty() && rest.all { it in POLITE_WORDS }
+            if (rest.isNotEmpty() && rest.all { it in POLITE_WORDS }) return true
         }
+        return false
     }
 
     private val POLITE_WORDS = setOf("пожалуйста", "уже", "давай", "ну", "все", "всё")
