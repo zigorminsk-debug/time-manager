@@ -318,7 +318,7 @@ object UpdateManager {
         val part = File(dir, "app-${release.version}.apk.part")
         val target = File(dir, "app-${release.version}.apk")
         var conn: HttpURLConnection? = null
-        try {
+        return try {
             conn = (URL(release.apkUrl).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 20_000
                 readTimeout = 60_000
