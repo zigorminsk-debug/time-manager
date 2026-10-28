@@ -132,7 +132,11 @@ object VoiceEngine {
         }
         if (active) {
             // Экран открыт — слушаем команду сразу, без фразы-обращения.
-            if (!capturing && _state.value.phase != VoicePhase.SPEAKING && _state.value.phase != VoicePhase.THINKING) {
+            if (handsFree && awaitingWake) {
+                listenCommand()
+            } else if (!capturing && _state.value.phase != VoicePhase.SPEAKING &&
+                _state.value.phase != VoicePhase.THINKING
+            ) {
                 listenCommand()
             }
             return

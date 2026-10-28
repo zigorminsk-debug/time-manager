@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -103,13 +102,14 @@ fun VoiceAssistantOverlay(
 
     Dialog(
         onDismissRequest = onClose,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        // Окно диалога само учитывает системные панели: контент не уезжает
+        // под строку состояния, а иконки в ней остаются контрастными.
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         BoxWithConstraints(
             Modifier
                 .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(NightTop, NightBottom)))
-                .systemBarsPadding(),
+                .background(Brush.verticalGradient(listOf(NightTop, NightBottom))),
         ) {
             // В ландшафте и на низких экранах включаем прокрутку и уменьшаем сферу,
             // чтобы кнопки микрофона и «Стоп» всегда оставались на виду.
