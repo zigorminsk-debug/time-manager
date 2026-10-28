@@ -29,6 +29,10 @@ class VoiceSpeechTest {
         LocalDateTime.of(2026, 10, day, hour, minute)
             .atZone(zone).toInstant().toEpochMilli()
 
+    private fun on(month: Int, day: Int, hour: Int, minute: Int): Long =
+        LocalDateTime.of(2026, month, day, hour, minute)
+            .atZone(zone).toInstant().toEpochMilli()
+
     // ------------------------------------------------------------- числа словами
 
     @Test
@@ -83,7 +87,7 @@ class VoiceSpeechTest {
         assertEquals("сегодня в три тридцать дня", RuTime.speakDue(at(27, 15, 30), true, now, zone))
         assertEquals("в пятницу в шесть сорок пять вечера", RuTime.speakDue(at(30, 18, 45), true, now, zone))
         assertEquals("завтра", RuTime.speakDue(at(28, 9, 0), false, now, zone))
-        assertEquals("третьего ноября в десять часов утра", RuTime.speakDue(at(3, 10, 0), true, now, zone))
+        assertEquals("третьего ноября в десять часов утра", RuTime.speakDue(on(11, 3, 10, 0), true, now, zone))
     }
 
     @Test

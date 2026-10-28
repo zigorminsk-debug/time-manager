@@ -55,9 +55,20 @@ object RuSpeech {
         }
     }
 
-    /** «одна задача», «две задачи», «пять задач». */
-    fun count(n: Int, one: String, few: String, many: String): String =
-        "${cardinal(n, feminine = true)} ${plural(n, one, few, many)}"
+    /** «одна задача», «две задачи», «пять задач», «один час». */
+    fun count(
+        n: Int,
+        one: String,
+        few: String,
+        many: String,
+        feminine: Boolean = true,
+    ): String = "${cardinal(n, feminine)} ${plural(n, one, few, many)}"
+
+    /** Винительный падеж для «через …»: «одну минуту», «двадцать одну минуту», «две минуты». */
+    private fun accusativeFeminine(n: Int): String {
+        val text = cardinal(n, feminine = true)
+        return if (text.endsWith("одна")) text.dropLast(4) + "одну" else text
+    }
 
     /** Порядковое числительное в родительном падеже: «третьего», «двадцать первого». */
     fun ordinalGenitive(day: Int): String {
@@ -156,18 +167,27 @@ object RuSpeech {
         val minutes = ((diff + 30_000L) / 60_000L).toInt()
         return when {
             minutes <= 0 -> "меньше чем через минуту"
-            minutes < 60 -> "через ${count(minutes, "минуту", "минуты", "минут")}"
-            minutes % 60 == 0 && minutes / 60 < 24 ->
-                "через ${count(minutes / 60, "час", "часа", "часов")}"
+            minutes < 60 -> "через ${accusativeFeminine(minutes)} " +
+                plural(minutes, "минуту", "минуты", "минут")
+            minutes % 60 == 0 && minutes / 60 < 24 -> "через ${hoursPhrase(minutes / 60)}"
             minutes < 24 * 60 -> {
                 val h = minutes / 60
                 val m = minutes % 60
-                "через ${count(h, "час", "часа", "часов")} ${cardinal(m)} " +
-                    plural(m, "минуту", "минуты", "минут")
+                val hours = hoursPhrase(h)
+                if (m == 0) {
+                    "через $hours"
+                } else {
+                    "через $hours ${accusativeFeminine(m)} " +
+                        plural(m, "минуту", "минуты", "минут")
+                }
             }
             else -> ""
         }
     }
+
+    /** «час», «два часа», «пять часов» — в мужском роде и без «один». */
+    private fun hoursPhrase(hours: Int): String =
+        if (hours == 1) "час" else count(hours, "час", "часа", "часов", feminine = false)
 
     /** Первая буква заглавной, остальное как есть. */
     fun sentence(text: String): String {
