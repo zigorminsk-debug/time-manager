@@ -45,6 +45,10 @@ object VoiceSession {
 
         val phrase = settings.wakePhrase.ifBlank { WakeWord.DEFAULT }
         val wake = WakeWord.split(text, phrase)
+        if (wake.found && wake.command.isBlank()) {
+            // Пользователь позвал ассистента без команды — отвечаем сводкой.
+            return greeting(appContext)
+        }
         val command = if (wake.found && wake.command.isNotBlank()) wake.command else text
         val reply = runCatching { VoiceBrain.handle(command, brainContext) }
             .getOrElse { error ->

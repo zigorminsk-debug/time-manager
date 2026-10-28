@@ -146,13 +146,20 @@ fun AppRoot() {
 
     val voiceState by VoiceEngine.state.collectAsState()
     var voiceOpen by rememberSaveable { mutableStateOf(false) }
+    var wantHandsFree by remember { mutableStateOf(false) }
     val micLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
             voiceOpen = true
             VoiceEngine.open(context)
+            if (wantHandsFree) {
+                wantHandsFree = false
+                AppGraph.settings.update { it.copy(voiceHandsFree = true) }
+                VoiceService.start(context)
+            }
         } else {
+            wantHandsFree = false
             scope.launch { snackbar.showSnackbar("Без микрофона голосовой помощник не услышит команду") }
         }
     }
@@ -206,6 +213,11 @@ fun AppRoot() {
             "archive" -> tab = Tab.ARCHIVE.name
             "all" -> tab = Tab.ALL.name
             "today" -> tab = Tab.TODAY.name
+        }
+        if (tabRequest != null && voiceOpen) {
+            // Голосовая команда «открой настройки» должна показать раздел, а не остаться на экране ассистента
+            voiceOpen = false
+            VoiceEngine.close()
         }
         MainActivity.openTab.value = null
     }
@@ -529,16 +541,18 @@ fun AppRoot() {
                 onStop = { VoiceEngine.interrupt() },
                 onSend = { text -> VoiceEngine.sendText(context, text) },
                 onToggleHandsFree = { enabled ->
-                    AppGraph.settings.update { it.copy(voiceHandsFree = enabled) }
-                    if (enabled) {
-                        if (VoiceEngine.hasMicrophone(context)) {
-                            VoiceService.start(context)
-                            scope.launch { snackbar.showSnackbar("Скажите «${settings.wakePhrase}…» — я слушаю") }
-                        } else {
-                            micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    if (!enabled) {
+                        AppGraph.settings.update { it.copy(voiceHandsFree = false) }
+                        VoiceService.stop(context)
+                    } else if (VoiceEngine.hasMicrophone(context)) {
+                        AppGraph.settings.update { it.copy(voiceHandsFree = true) }
+                        VoiceService.start(context)
+                        scope.launch {
+                            snackbar.showSnackbar("Скажите «${settings.wakePhrase}…» — я слушаю")
                         }
                     } else {
-                        VoiceService.stop(context)
+                        wantHandsFree = true
+                        micLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 },
                 onHint = { text -> VoiceEngine.sendText(context, text) },

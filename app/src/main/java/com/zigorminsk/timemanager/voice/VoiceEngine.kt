@@ -4,9 +4,13 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -127,8 +131,9 @@ object VoiceEngine {
             return
         }
         if (active) {
+            // Экран открыт — слушаем команду сразу, без фразы-обращения.
             if (!capturing && _state.value.phase != VoicePhase.SPEAKING && _state.value.phase != VoicePhase.THINKING) {
-                if (handsFree) listenWake() else listenCommand()
+                listenCommand()
             }
             return
         }
@@ -212,7 +217,7 @@ object VoiceEngine {
         handsFree = true
         if (!active) beginSession(ctx)
         _state.value = _state.value.copy(handsFree = true)
-        listenWake()
+        if (uiVisible) listenCommand() else listenWake()
     }
 
     /** Сервис остановлен пользователем или системой. */
@@ -424,6 +429,7 @@ object VoiceEngine {
     private fun handleResult(text: String, awaitWake: Boolean) {
         val ctx = appContext ?: return
         if (!active) return
+        failures = 0
         val phrase = AppGraph.settings.value.wakePhrase.ifBlank { WakeWord.DEFAULT }
         if (awaitWake) {
             val match = WakeWord.split(text, phrase)
@@ -443,9 +449,11 @@ object VoiceEngine {
             if (command.isBlank()) {
                 val ack = VoiceBrain.wakeAck()
                 push(VoiceLine(false, ack))
+                tapFeedback(ctx)
                 speakThenListen(ctx, ack) { listenCommand() }
                 return
             }
+            tapFeedback(ctx)
             dispatch(ctx, command)
             return
         }
@@ -632,6 +640,20 @@ object VoiceEngine {
     }
 
     // ------------------------------------------------------------------ мелочи
+
+    /** Короткая вибрация — «я тебя услышал». */
+    private fun tapFeedback(ctx: Context) {
+        if (!AppGraph.settings.value.vibrate) return
+        runCatching {
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                ctx.getSystemService(VibratorManager::class.java)?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
+            vibrator?.vibrate(VibrationEffect.createOneShot(14L, VibrationEffect.DEFAULT_AMPLITUDE))
+        }
+    }
 
     private fun push(line: VoiceLine) {
         val history = (_state.value.history + line).takeLast(40)

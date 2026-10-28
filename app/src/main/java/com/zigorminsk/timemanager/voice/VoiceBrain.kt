@@ -236,7 +236,7 @@ object VoiceBrain {
                 return VoiceReply(
                     spoken = "Хорошо, «${ctx.pendingTitle}» — $whenText. Напомню.",
                     action = VoiceAction.SetDue(pendingId, millis, hasTime),
-                    hints = listOf("Что на сегодня?", "Ещё задачу", "Выполни эту"),
+                    hints = listOf("Что на сегодня?", "Что дальше?", "Выполни первую"),
                     taskIds = listOf(pendingId),
                 )
             }
@@ -424,7 +424,7 @@ object VoiceBrain {
                     } else {
                         "На когда перенести? Например: «на завтра в десять»."
                     },
-                    hints = listOf("На завтра в 9", "Через час", "На вечер"),
+                    hints = listOf("Перенеси на завтра в 9", "Перенеси на час", "Перенеси на вечер"),
                     taskIds = listOfNotNull(task?.id).ifEmpty { ctx.lastTaskIds.take(1) },
                 )
             }
@@ -441,7 +441,7 @@ object VoiceBrain {
             return VoiceReply(
                 spoken = "«${task.title}» перенесена на $whenText.",
                 action = VoiceAction.MoveTask(task.id, task.title, millis, movedHasTime),
-                hints = listOf("Что на сегодня?", "Отложи на 20 минут"),
+                hints = listOf("Что на сегодня?", "Что дальше?", "Отложи на 20 минут"),
                 taskIds = listOf(task.id),
             )
         }
@@ -558,7 +558,7 @@ object VoiceBrain {
         val hints = if (dueAt == null && place == null) {
             listOf("Завтра в 9", "Сегодня в 19:00", "Через час")
         } else {
-            listOf("Что на сегодня?", "Ещё задачу", "Отложи на 20 минут")
+            listOf("Что на сегодня?", "Что дальше?", "Отложи на 20 минут")
         }
         return VoiceReply(spoken = speech, action = action, hints = hints)
     }
@@ -577,7 +577,7 @@ object VoiceBrain {
                 "Отложено: «${task.title}». Напомню в $time.",
             ),
             action = VoiceAction.SnoozeTask(task.id, task.title, minutes),
-            hints = listOf("Что дальше?", "Выполни её", "Что на сегодня?"),
+            hints = listOf("Что дальше?", "Выполни первую", "Что на сегодня?"),
             taskIds = listOf(task.id),
         )
     }
@@ -842,21 +842,23 @@ object VoiceBrain {
         ).trim()
 
     private fun stripCommandWords(text: String, verbs: List<String>): String {
-        val pattern = "^(?iu)\\s*(?:пожалуйста[\\s,]*)?(?:" +
-            verbs.joinToString("|") { Regex.escape(it) } +
+        val pattern = "^(?iu)\\s*(?:пожалуйста[\\s,]*)?(?:" + verbPattern(verbs) +
             ")(?:\\s+(?:задачу|эту|это|последнюю))?\\s*[:,]?\\s*"
         return text.replaceFirst(Regex(pattern), "").trim()
     }
 
     private fun stripAddPrefix(text: String): String {
-        val pattern = "^(?iu)\\s*(?:пожалуйста[\\s,]*)?(?:" +
-            ADD_VERBS.joinToString("|") { Regex.escape(it) } +
+        val pattern = "^(?iu)\\s*(?:пожалуйста[\\s,]*)?(?:" + verbPattern(ADD_VERBS) +
             ")(?:\\s+(?:задачу|мне|пожалуйста))?\\s*[:,]?\\s*"
         var body = text.replaceFirst(Regex(pattern), "").trim()
         // «напомни мне, пожалуйста, ...» — снимаем ещё один слой вежливости
-        body = body.replaceFirst(Regex("^(?iu)\\s*(?:мне|пожалуйста|пожалуйста,)\\s*"), "").trim()
+        body = body.replaceFirst(Regex("^(?iu)\\s*(?:мне|пожалуйста\\s*,?)\\s*"), "").trim()
         return body
     }
+
+    /** Длинные формы («напомнить») должны идти раньше коротких («напомни»). */
+    private fun verbPattern(verbs: List<String>): String =
+        verbs.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) }
 
     private fun startsWithAny(n: String, prefixes: List<String>): String? =
         prefixes.firstOrNull { item -> n == item || n.startsWith("$item ") }

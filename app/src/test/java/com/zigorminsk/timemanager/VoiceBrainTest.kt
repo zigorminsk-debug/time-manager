@@ -208,6 +208,26 @@ class VoiceBrainTest {
     }
 
     @Test
+    fun `длинная форма команды не обрезается`() {
+        val added = reply("Напомнить купить хлеб завтра в девять")
+        val addAction = added.action as VoiceAction.AddTask
+        assertEquals("Купить хлеб", addAction.title)
+
+        val archived = reply("Удалить купить хлеб")
+        assertTrue(archived.action is VoiceAction.ArchiveTask)
+
+        val snoozed = reply("Отложить на десять минут")
+        assertTrue(snoozed.action is VoiceAction.SnoozeTask)
+    }
+
+    @Test
+    fun `числительные превращаются во время`() {
+        assertEquals("в 9 вечера", VoiceBrain.digitsForTime("в девять вечера"))
+        assertEquals("через 20 минут", VoiceBrain.digitsForTime("через двадцать минут"))
+        assertEquals("купить два хлеба", VoiceBrain.digitsForTime("купить два хлеба"))
+    }
+
+    @Test
     fun `просроченные`() {
         val reply = reply("Что просрочено?")
         assertTrue(reply.spoken.contains("Сдать отчёт"))

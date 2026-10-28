@@ -15,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -64,7 +66,7 @@ class VoiceService : Service() {
             text = "Скажите «${AppGraph.settings.value.wakePhrase}…», чтобы дать команду",
             listening = true,
         )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             startForeground(
                 Notifications.ID_VOICE_SERVICE,
                 notification,
@@ -78,23 +80,29 @@ class VoiceService : Service() {
     private fun observeState() {
         observer?.cancel()
         observer = scope.launch {
-            VoiceEngine.state.collect { state ->
-                val title = when (state.phase) {
-                    VoicePhase.WAKE -> "Слушаю фразу «${state.wakePhrase}»"
-                    VoicePhase.LISTENING -> "Слушаю команду"
-                    VoicePhase.THINKING -> "Разбираю команду"
-                    VoicePhase.SPEAKING -> "Отвечаю"
-                    VoicePhase.ERROR -> "Голосовой помощник: нужен интернет"
-                    VoicePhase.IDLE -> "Голосовой помощник включён"
+            VoiceEngine.state
+                // Амплитуда меняется десять раз в секунду — уведомление перерисовываем
+                // только когда меняется смысл: фаза, расшифровка, ответ или ошибка.
+                .map { listOf(it.phase.name, it.partial, it.lastReply, it.error ?: "") }
+                .distinctUntilChanged()
+                .collect {
+                    val state = VoiceEngine.state.value
+                    val title = when (state.phase) {
+                        VoicePhase.WAKE -> "Слушаю фразу «${state.wakePhrase}»"
+                        VoicePhase.LISTENING -> "Слушаю команду"
+                        VoicePhase.THINKING -> "Разбираю команду"
+                        VoicePhase.SPEAKING -> "Отвечаю"
+                        VoicePhase.ERROR -> "Голосовой помощник: нужен интернет"
+                        VoicePhase.IDLE -> "Голосовой помощник включён"
+                    }
+                    val text = when {
+                        state.partial.isNotBlank() -> state.partial
+                        state.error != null -> state.error ?: ""
+                        state.lastReply.isNotBlank() -> state.lastReply
+                        else -> "Активных задач: ${AppGraph.repo.data.activeTasks().size}"
+                    }
+                    Notifications.showVoiceService(this@VoiceService, title, text, state.listening)
                 }
-                val text = when {
-                    state.partial.isNotBlank() -> state.partial
-                    state.error != null -> state.error
-                    state.lastReply.isNotBlank() -> state.lastReply
-                    else -> "Активных задач: ${AppGraph.repo.data.activeTasks().size}"
-                }
-                Notifications.showVoiceService(this@VoiceService, title, text, state.listening)
-            }
         }
     }
 
@@ -102,6 +110,9 @@ class VoiceService : Service() {
         observer?.cancel()
         scope.cancel()
         VoiceEngine.onServiceStopped()
+        // Если сервис всё-таки остановился (пользователь, экономия батареи,
+        // перезагрузка) — снимаем галочку, чтобы настройки не врали.
+        runCatching { AppGraph.settings.update { it.copy(voiceHandsFree = false) } }
         super.onDestroy()
     }
 
