@@ -35,10 +35,18 @@ object Dictation {
         }
 
     /** Достаёт распознанный текст из результата активности. */
-    fun extract(resultCode: Int, data: Intent?): String? {
-        if (resultCode != Activity.RESULT_OK || data == null) return null
-        val variants = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-        return variants?.firstOrNull()?.trim()?.takeIf { it.isNotBlank() }
+    fun extract(resultCode: Int, data: Intent?): String? = extractAll(resultCode, data).firstOrNull()
+
+    /**
+     * Все варианты распознавания (до [RecognizerIntent.EXTRA_MAX_RESULTS]).
+     *
+     * Google часто возвращает первым «Через пятнадцать минут», а вторым —
+     * «через 15 минут»; разбор даты должен попробовать каждый, а не только первый.
+     */
+    fun extractAll(resultCode: Int, data: Intent?): List<String> {
+        if (resultCode != Activity.RESULT_OK || data == null) return emptyList()
+        val variants = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS) ?: return emptyList()
+        return variants.mapNotNull { it?.trim()?.takeIf { text -> text.isNotBlank() } }
     }
 }
 
@@ -273,13 +281,22 @@ class Speaker(context: Context) : TextToSpeech.OnInitListener {
         if (done != null) main.postDelayed({ done() }, 140)
     }
 
+    /**
+     * Выбор голоса: лучше офлайн, качественный, с локалью ru-RU и без пометки
+     * «novelty»/«low quality». Иначе Android подсовывает роботизированный голос,
+     * и любая правильная фраза звучит криво.
+     */
     private fun chooseVoice(engine: TextToSpeech): Voice? = runCatching {
         val voices = engine.voices ?: return@runCatching null
         voices.asSequence()
             .filter { it.locale.language.equals("ru", ignoreCase = true) }
+            .filter { !it.features.orEmpty().contains("notInstalled") }
             .sortedWith(
                 compareByDescending<Voice> { !it.isNetworkConnectionRequired }
                     .thenByDescending { it.quality }
+                    .thenByDescending { it.locale.country.equals("RU", ignoreCase = true) }
+                    .thenByDescending { !it.features.orEmpty().contains("legacySetLanguageVoice") }
+                    .thenByDescending { it.features.orEmpty().contains("female") }
                     .thenBy { it.name },
             )
             .firstOrNull()

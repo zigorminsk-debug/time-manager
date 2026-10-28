@@ -329,7 +329,9 @@ fun SettingsScreen(
                         PrimaryButton(
                             text = "Установить",
                             modifier = Modifier.weight(1f),
-                            onClick = { UpdateManager.install(context, latestApk) },
+                            // Проверяем файл заново: пока экран открыт, кэш мог
+                            // очиститься или докачаться новая версия.
+                            onClick = { UpdateManager.installLatestDownloaded(context) },
                         )
                     }
                 }

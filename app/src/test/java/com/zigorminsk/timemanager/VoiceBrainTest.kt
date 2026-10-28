@@ -156,14 +156,15 @@ class VoiceBrainTest {
     @Test
     fun `который час`() {
         val reply = reply("Который час?")
-        assertTrue(reply.spoken.contains("10:00"))
-        assertTrue(reply.spoken.contains("вторник"))
+        // Время проговаривается словами, а не цифрами: «десять часов утра».
+        assertTrue(reply.spoken, reply.spoken.contains("десять часов утра"))
+        assertTrue(reply.spoken, reply.spoken.contains("вторник"))
     }
 
     @Test
     fun `сколько задач`() {
         val reply = reply("Сколько у меня задач?")
-        assertTrue(reply.spoken.contains("3"))
+        assertTrue(reply.spoken, reply.spoken.contains("три"))
     }
 
     @Test

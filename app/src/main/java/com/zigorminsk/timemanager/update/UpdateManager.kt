@@ -279,17 +279,46 @@ object UpdateManager {
 
     fun updatesDir(context: Context): File = File(context.cacheDir, "updates").apply { mkdirs() }
 
+    /**
+     * Готовый к установке APK. Файл проверяется по-настоящему:
+     * недокачанный или битый пакет установщику не отдаём — иначе Android
+     * показывает «Не удалось обработать пакет».
+     */
     fun latestApk(context: Context): File? = updatesDir(context)
         .listFiles()
-        ?.filter { it.isFile && it.extension.equals("apk", true) }
+        ?.filter { it.isFile && it.extension.equals("apk", true) && it.length() > 0 }
+        ?.filter { isCompleteApk(context, it) }
         ?.maxByOrNull { it.lastModified() }
 
+    /** Пакет читается менеджером пакетов — значит, архив целый и разбирается. */
+    fun isCompleteApk(context: Context, apk: File): Boolean = runCatching {
+        @Suppress("DEPRECATION")
+        context.packageManager.getPackageArchiveInfo(apk.absolutePath, 0) != null
+    }.getOrDefault(false)
+
+    /** Загрузка уже идёт — вторую не начинаем, иначе файл портится двумя потоками. */
+    private val downloading = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun isDownloading(): Boolean = downloading.get()
+
     suspend fun download(context: Context, release: ReleaseInfo): File? = withContext(Dispatchers.IO) {
+        if (!downloading.compareAndSet(false, true)) return@withContext null
+        try {
+            downloadLocked(context, release)
+        } finally {
+            downloading.set(false)
+        }
+    }
+
+    private fun downloadLocked(context: Context, release: ReleaseInfo): File? {
         val dir = updatesDir(context)
         dir.listFiles()?.forEach { runCatching { it.delete() } }
+        // Пишем в .part и переименовываем только после проверок: установщик
+        // не должен увидеть файл, который ещё качается.
+        val part = File(dir, "app-${release.version}.apk.part")
         val target = File(dir, "app-${release.version}.apk")
         var conn: HttpURLConnection? = null
-        try {
+        return try {
             conn = (URL(release.apkUrl).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 20_000
                 readTimeout = 60_000
@@ -299,11 +328,11 @@ object UpdateManager {
             val code = conn.responseCode
             if (code !in 200..299) {
                 Log.w(TAG, "скачивание: код $code (${release.apkUrl})")
-                return@withContext null
+                return null
             }
             val total = conn.contentLengthLong
             conn.inputStream.use { input ->
-                target.outputStream().use { out ->
+                part.outputStream().use { out ->
                     val buffer = ByteArray(64 * 1024)
                     var read: Int
                     var done = 0L
@@ -321,25 +350,40 @@ object UpdateManager {
                     }
                 }
             }
-            if (total > 0 && target.length() != total) {
-                Log.w(TAG, "размер файла не совпал: ${target.length()} != $total")
-                target.delete()
-                return@withContext null
+            if (total > 0 && part.length() != total) {
+                Log.w(TAG, "размер файла не совпал: ${part.length()} != $total")
+                part.delete()
+                return null
+            }
+            if (part.length() == 0L) {
+                Log.w(TAG, "пустой файл обновления")
+                part.delete()
+                return null
             }
             val expected = release.sha256
             if (!expected.isNullOrBlank()) {
-                val actual = sha256(target)
+                val actual = sha256(part)
                 if (!actual.equals(expected, ignoreCase = true)) {
                     Log.w(TAG, "sha256 не совпал: $actual != $expected")
-                    target.delete()
-                    return@withContext null
+                    part.delete()
+                    return null
                 }
+            }
+            if (!part.renameTo(target)) {
+                Log.w(TAG, "не удалось переименовать файл обновления")
+                part.delete()
+                return null
+            }
+            if (!isCompleteApk(context, target)) {
+                Log.w(TAG, "APK не читается менеджером пакетов")
+                target.delete()
+                return null
             }
             Notifications.cancel(context, Notifications.ID_UPDATE_READY)
             target
         } catch (e: Exception) {
             Log.w(TAG, "ошибка скачивания", e)
-            runCatching { target.delete() }
+            runCatching { part.delete() }
             null
         } finally {
             conn?.disconnect()
@@ -382,6 +426,14 @@ object UpdateManager {
     }
 
     fun install(context: Context, apk: File) {
+        // Файл мог не докачаться, быть удалён системой или оказаться битым —
+        // проверяем перед передачей установщику и при необходимости качаем заново.
+        if (!apk.exists() || !isCompleteApk(context, apk)) {
+            Log.w(TAG, "APK не готов к установке: ${apk.absolutePath}")
+            runCatching { apk.delete() }
+            enqueueDownload(context)
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !context.packageManager.canRequestPackageInstalls()
         ) {

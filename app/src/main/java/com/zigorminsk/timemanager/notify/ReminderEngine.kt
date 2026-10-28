@@ -5,6 +5,7 @@ import com.zigorminsk.timemanager.AppGraph
 import com.zigorminsk.timemanager.place.PlaceMonitor
 import com.zigorminsk.timemanager.update.UpdateManager
 import com.zigorminsk.timemanager.util.CrashReporter
+import com.zigorminsk.timemanager.util.RuSpeech
 import com.zigorminsk.timemanager.util.RuTime
 
 /** Логика срабатывания напоминаний — общая для будильников, уведомлений и UI. */
@@ -70,7 +71,12 @@ object ReminderEngine {
         }.onFailure { CrashReporter.log(context, "Не удалось отложить задачу", it) }
         if (speak && settings.speakOnReminder) {
             runCatching {
-                AppGraph.speaker.speak("Хорошо, напомню в ${RuTime.formatTime(until)}", settings.speechRate)
+                val zdt = java.time.Instant.ofEpochMilli(until)
+                    .atZone(java.time.ZoneId.systemDefault())
+                AppGraph.speaker.speak(
+                    "Хорошо, напомню в ${RuSpeech.clock(zdt.hour, zdt.minute)}",
+                    settings.speechRate,
+                )
             }
         }
     }
