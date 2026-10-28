@@ -228,6 +228,82 @@ class VoiceBrainTest {
     }
 
     @Test
+    fun `относительное время словами`() {
+        val reply = reply("Напомни через двадцать минут выпить воды")
+        val action = reply.action as VoiceAction.AddTask
+        assertEquals("Выпить воды", action.title)
+        assertEquals(now + 20 * 60_000L, action.dueAt)
+        assertTrue(action.hasTime)
+    }
+
+    @Test
+    fun `через час с названием — это новая задача, а не отложить`() {
+        val reply = reply("Через час позвонить в банк")
+        val action = reply.action as VoiceAction.AddTask
+        assertEquals("Позвонить в банк", action.title)
+        assertEquals(now + 60 * 60_000L, action.dueAt)
+    }
+
+    @Test
+    fun `отложить без названия задачи`() {
+        val reply = reply("Отложи на двадцать минут")
+        val action = reply.action as VoiceAction.SnoozeTask
+        assertEquals(20, action.minutes)
+    }
+
+    @Test
+    fun `перенести без названия задачи`() {
+        val reply = reply("Перенеси на завтра в десять")
+        val action = reply.action as VoiceAction.MoveTask
+        assertEquals("1", action.taskId)
+        assertEquals(at(28, 10), action.dueAt)
+    }
+
+    @Test
+    fun `убрать в архив без названия`() {
+        val reply = reply("Убери в архив")
+        val action = reply.action
+        assertTrue(action is VoiceAction.ArchiveTask)
+        assertEquals("1", (action as VoiceAction.ArchiveTask).taskId)
+    }
+
+    @Test
+    fun `показать мои задачи`() {
+        val reply = reply("Покажи мои задачи")
+        assertNull(reply.action)
+        assertTrue(reply.spoken.contains("Позвонить маме"))
+    }
+
+    @Test
+    fun `что по задачам`() {
+        val reply = reply("Что по задачам?")
+        assertNull(reply.action)
+        assertTrue(reply.spoken.contains("Позвонить маме"))
+    }
+
+    @Test
+    fun `вопрос не становится задачей`() {
+        val reply = reply("Сколько будет два плюс два?")
+        assertNull(reply.action)
+        assertTrue(reply.spoken.contains("Не понял вопрос"))
+    }
+
+    @Test
+    fun `задача на завтра без времени`() {
+        val reply = reply("Напомни купить хлеб завтра")
+        val action = reply.action as VoiceAction.AddTask
+        assertEquals(at(28, 9), action.dueAt)
+        assertEquals(false, action.hasTime)
+    }
+
+    @Test
+    fun `следующая задача`() {
+        val reply = reply("Что дальше?")
+        assertNull(reply.action)
+        assertTrue(reply.spoken.contains("Позвонить маме"))
+    }
+
+    @Test
     fun `просроченные`() {
         val reply = reply("Что просрочено?")
         assertTrue(reply.spoken.contains("Сдать отчёт"))

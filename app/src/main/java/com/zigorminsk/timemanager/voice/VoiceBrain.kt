@@ -343,8 +343,11 @@ object VoiceBrain {
             val tasks = ctx.tasks.filter { it.isActive && it.dueAt != null && RuTime.dateOf(it.dueAt!!, ctx.zone) == tomorrow }
             return planReply(tasks, ctx, "завтра", seed)
         }
-        val asksAboutTasks = hasAnyWord(n, "задачи", "задач", "задачах", "задачам", "дела", "делах") &&
-            hasAnyWord(n, "какие", "мои", "покажи", "сегодня", "есть", "список")
+        val taskWords = hasAnyWord(
+            n, "задачи", "задач", "задачах", "задачам", "задачами", "дела", "делах", "делам", "делами",
+        )
+        val asksAboutTasks = (taskWords && hasAnyWord(n, "какие", "мои", "покажи", "сегодня", "есть", "список")) ||
+            (taskWords && startsWithAny(n, QUESTION_STARTS) != null)
         if (hasPhrase(n, "что на сегодня") || hasPhrase(n, "что у меня сегодня") ||
             hasPhrase(n, "планы на сегодня") || hasPhrase(n, "план на сегодня") ||
             hasPhrase(n, "какие задачи") || hasPhrase(n, "что у меня") ||
@@ -388,7 +391,14 @@ object VoiceBrain {
         val archiveQuery = startsWithAny(n, ARCHIVE_VERBS)
         if (archiveQuery != null) {
             val query = stripCommandWords(text, ARCHIVE_VERBS)
-            val task = resolveTask(query, ctx) ?: if (query.isBlank()) urgentTask(ctx) else null
+            val generic = WakeWord.normalize(query)
+            val task = resolveTask(query, ctx) ?: if (
+                generic.isBlank() || generic == "в архив" || generic == "архив" || isGeneric(query)
+            ) {
+                urgentTask(ctx)
+            } else {
+                null
+            }
             if (task == null) {
                 return notFound(query, ctx, 0, "убрать в архив")
             }
@@ -472,9 +482,7 @@ object VoiceBrain {
         }
 
         // «на 20 минут» отдельной фразой после списка
-        if (n.split(" ").size <= 5 && parseMinutes(n) != null &&
-            (hasAnyWord(n, "минут", "минуты", "минуту", "час", "часа", "полчаса") || hasWord(n, "полчаса"))
-        ) {
+        if (isBareTimePhrase(n) && parseMinutes(n) != null) {
             val minutes = parseMinutes(n)
             val task = urgentTask(ctx)
             if (minutes != null && task != null) return snoozeReply(task, minutes, ctx, seed)
@@ -491,8 +499,8 @@ object VoiceBrain {
             return VoiceReply(spoken = if (n == "нет" || n.startsWith("не ")) "Хорошо." else "Отлично.", hints = DEFAULT_HINTS)
         }
 
-        // 20. Вопрос без команды — уточняем
-        if (startsWithAny(n, QUESTION_STARTS) != null && !looksLikeTask(n)) {
+        // 20. Вопрос без команды — уточняем, а не создаём задачу из вопроса
+        if (startsWithAny(n, QUESTION_STARTS) != null) {
             return VoiceReply(
                 spoken = "Не понял вопрос. Могу рассказать, что на сегодня, или записать задачу. Что сделать?",
                 hints = DEFAULT_HINTS,
@@ -612,7 +620,7 @@ object VoiceBrain {
             )
         }
         val shown = sorted.take(3)
-        val head = "На $day ${plural(sorted.size, "задача", "задачи", "задач")}: ${sorted.size}."
+        val head = "На $day ${sorted.size} ${plural(sorted.size, "задача", "задачи", "задач")}."
         val body = shown.joinToString(". ") { describeTask(it, ctx) }
         val tail = if (sorted.size > shown.size) " И ещё ${sorted.size - shown.size}." else ""
         return VoiceReply(
@@ -788,6 +796,21 @@ object VoiceBrain {
         }
     }
 
+    /** Фраза состоит только из времени: «на 20 минут», «через час», «на полчаса». */
+    private fun isBareTimePhrase(n: String): Boolean {
+        val words = n.split(" ").filter { it.isNotBlank() }
+        if (words.isEmpty()) return false
+        return words.all { word ->
+            word in TIME_ONLY_WORDS || word in NUMBER_WORDS || word.toIntOrNull() != null
+        }
+    }
+
+    private val TIME_ONLY_WORDS = setOf(
+        "на", "через", "минут", "минуты", "минуту", "мин", "час", "часа", "часов",
+        "полчаса", "полтора", "пол", "и", "с", "до", "утра", "дня", "вечера", "ночи",
+        "обед", "полдень", "полночь",
+    )
+
     private fun parseMinutes(n: String): Int? {
         Regex("(?U)(?:на|через)\\s+(\\d{1,3})\\s*(?:минут|мин)\\w*").find(n)?.let {
             return it.groupValues[1].toIntOrNull()
@@ -864,12 +887,6 @@ object VoiceBrain {
 
     private fun startsWithAny(n: String, prefixes: List<String>): String? =
         prefixes.firstOrNull { item -> n == item || n.startsWith("$item ") }
-
-    private fun looksLikeTask(n: String): Boolean {
-        val words = n.split(" ").filter { it.isNotBlank() }
-        if (words.size <= 2) return false
-        return words.any { it.length >= 6 }
-    }
 
     private fun hasWord(n: String, word: String): Boolean = (" $n ").contains(" $word ")
 
