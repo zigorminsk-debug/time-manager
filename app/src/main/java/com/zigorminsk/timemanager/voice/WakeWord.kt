@@ -83,10 +83,12 @@ object WakeWord {
                     }
                     val sb = StringBuilder(source.length)
                     source.forEachIndexed { index, ch -> if (!remove[index]) sb.append(ch) }
+                    // После вырезания фразы остаются запятые и пробелы — снимаем их
+                    // по кругу, пока не останется чистый текст команды.
                     val command = sb.toString()
                         .replace(Regex("\\s+"), " ")
-                        .trim()
-                        .trim(',', '.', '!', '?', ';', ':', '-', '—', '–')
+                        .replace(Regex("^[\\s,.;:!?—–-]+"), "")
+                        .replace(Regex("[\\s,.;:!?—–-]+$"), "")
                         .trim()
                     return Match(true, command, alias)
                 }
