@@ -106,6 +106,18 @@ data class Settings(
     val silentNoDnd: Boolean = true,
     val fullScreenReminder: Boolean = true,
     val lastUpdateCheck: Long = 0L,
+    /** Живой голосовой помощник (экран «Слушаю…»). */
+    val liveVoice: Boolean = true,
+    /** Слушать фразу-обращение в фоне (foreground-сервис с микрофоном). */
+    val voiceHandsFree: Boolean = false,
+    /** Фраза, с которой начинается разговор. */
+    val wakePhrase: String = "слушай тайм",
+    /** Тон голоса: ниже — солиднее, выше — живее. */
+    val voicePitch: Float = 1.0f,
+    /** Больше живых словечек и вариантов ответа. */
+    val voiceChatty: Boolean = true,
+    /** Сколько вопросов подряд ассистент ждёт без фразы-обращения. */
+    val voiceFollowUps: Int = 2,
 ) {
     companion object {
         const val THEME_SYSTEM = 0

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -65,6 +66,8 @@ import com.zigorminsk.timemanager.place.PlaceMonitor
 import com.zigorminsk.timemanager.update.UpdateManager
 import com.zigorminsk.timemanager.util.CrashReporter
 import com.zigorminsk.timemanager.util.RuTime
+import com.zigorminsk.timemanager.voice.VoiceEngine
+import com.zigorminsk.timemanager.voice.VoiceService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.time.ZoneId
@@ -99,11 +102,13 @@ class MainActivity : ComponentActivity() {
         intent ?: return
         intent.getStringExtra(Notifications.EXTRA_TASK_ID)?.let { openTask.value = it }
         intent.getStringExtra("open_tab")?.let { openTab.value = it }
+        if (intent.getBooleanExtra("open_voice", false)) openVoice.value = true
     }
 
     companion object {
         val openTask = MutableStateFlow<String?>(null)
         val openTab = MutableStateFlow<String?>(null)
+        val openVoice = MutableStateFlow(false)
     }
 }
 
@@ -139,6 +144,34 @@ fun AppRoot() {
     val scope = rememberCoroutineScope()
     val currentTab = Tab.entries.firstOrNull { it.name == tab } ?: Tab.TODAY
 
+    val voiceState by VoiceEngine.state.collectAsState()
+    var voiceOpen by rememberSaveable { mutableStateOf(false) }
+    var wantHandsFree by remember { mutableStateOf(false) }
+    val micLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            voiceOpen = true
+            VoiceEngine.open(context)
+            if (wantHandsFree) {
+                wantHandsFree = false
+                AppGraph.settings.update { it.copy(voiceHandsFree = true) }
+                VoiceService.start(context)
+            }
+        } else {
+            wantHandsFree = false
+            scope.launch { snackbar.showSnackbar("Без микрофона голосовой помощник не услышит команду") }
+        }
+    }
+    val openAssistant: () -> Unit = {
+        if (VoiceEngine.hasMicrophone(context)) {
+            voiceOpen = true
+            VoiceEngine.open(context)
+        } else {
+            micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
     // При первом запуске просим уведомления и геолокацию
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -165,9 +198,27 @@ fun AppRoot() {
         AppGraph.repo.taskById(id)?.let { editing = it; editorOpen = true }
         MainActivity.openTask.value = null
     }
+    val voiceRequest by MainActivity.openVoice.collectAsState()
+    LaunchedEffect(voiceRequest) {
+        if (voiceRequest) {
+            openAssistant()
+            MainActivity.openVoice.value = false
+        }
+    }
     val tabRequest by MainActivity.openTab.collectAsState()
     LaunchedEffect(tabRequest) {
-        if (tabRequest == "places") tab = Tab.PLACES.name
+        when (tabRequest) {
+            "places" -> tab = Tab.PLACES.name
+            "settings" -> tab = Tab.SETTINGS.name
+            "archive" -> tab = Tab.ARCHIVE.name
+            "all" -> tab = Tab.ALL.name
+            "today" -> tab = Tab.TODAY.name
+        }
+        if (tabRequest != null && voiceOpen) {
+            // Голосовая команда «открой настройки» должна показать раздел, а не остаться на экране ассистента
+            voiceOpen = false
+            VoiceEngine.close()
+        }
         MainActivity.openTab.value = null
     }
     LaunchedEffect(Unit) {
@@ -179,6 +230,10 @@ fun AppRoot() {
         if (voiceMissing) {
             snackbar.showSnackbar("Русский голос для синтеза речи не установлен. Android: Настройки → Синтез речи.")
         }
+    }
+
+    LaunchedEffect(Unit) {
+        if (voiceOpen && !VoiceEngine.isActive()) VoiceEngine.open(context)
     }
 
     val actions = TaskActions(
@@ -201,6 +256,13 @@ fun AppRoot() {
                 TopAppBar(
                     title = {
                         Text(currentTab.title, fontWeight = FontWeight.SemiBold)
+                    },
+                    actions = {
+                        if (settings.liveVoice) {
+                            IconButton(onClick = openAssistant) {
+                                Icon(AppIcons.Mic, contentDescription = "Голосовой помощник")
+                            }
+                        }
                     },
                 )
             },
@@ -281,6 +343,8 @@ fun AppRoot() {
                             AppGraph.speaker.speak(text, settings.speechRate)
                         },
                         onStopSpeaking = { AppGraph.speaker.stop() },
+                        onVoiceAssistant = openAssistant,
+                        showVoiceButton = settings.liveVoice,
                         header = {
                             if (!notificationsEnabled(context)) {
                                 PermissionCard(
@@ -374,11 +438,14 @@ fun AppRoot() {
                             }
                         },
                         onSpeakTest = {
-                            AppGraph.speaker.speak(
+                            AppGraph.speaker.setPitch(settings.voicePitch)
+                            AppGraph.speaker.speakLive(
                                 "Привет! Я напомню о задачах. Сейчас " + RuTime.formatTime(System.currentTimeMillis()) + ".",
                                 settings.speechRate,
+                                settings.voicePitch,
                             )
                         },
+                        onOpenAssistant = openAssistant,
                         onMessage = { scope.launch { snackbar.showSnackbar(it) } },
                     )
                 }
@@ -468,6 +535,37 @@ fun AppRoot() {
                     Notifications.cancelTask(context, task.id)
                 },
                 onDismiss = { deleting = null },
+            )
+        }
+
+        if (voiceOpen) {
+            VoiceAssistantOverlay(
+                state = voiceState,
+                micGranted = VoiceEngine.hasMicrophone(context),
+                onClose = {
+                    voiceOpen = false
+                    VoiceEngine.close()
+                },
+                onMic = { VoiceEngine.pushToTalk(context) },
+                onStop = { VoiceEngine.interrupt() },
+                onSend = { text -> VoiceEngine.sendText(context, text) },
+                onToggleHandsFree = { enabled ->
+                    if (!enabled) {
+                        AppGraph.settings.update { it.copy(voiceHandsFree = false) }
+                        VoiceService.stop(context)
+                    } else if (VoiceEngine.hasMicrophone(context)) {
+                        AppGraph.settings.update { it.copy(voiceHandsFree = true) }
+                        VoiceService.start(context)
+                        scope.launch {
+                            snackbar.showSnackbar("Скажите «${settings.wakePhrase}…» — я слушаю")
+                        }
+                    } else {
+                        wantHandsFree = true
+                        micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                onHint = { text -> VoiceEngine.sendText(context, text) },
+                onRequestMic = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) },
             )
         }
     }

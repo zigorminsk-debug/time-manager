@@ -42,16 +42,16 @@ object ReminderEngine {
         }
     }
 
-    fun complete(context: Context, taskId: String) {
+    fun complete(context: Context, taskId: String, speak: Boolean = true) {
         Notifications.cancelTask(context, taskId)
         AppGraph.repo.completeTask(taskId)
         val settings = AppGraph.settings.value
-        if (settings.speakOnReminder) {
+        if (speak && settings.speakOnReminder) {
             AppGraph.speaker.speak("Отлично, задача выполнена", settings.speechRate)
         }
     }
 
-    fun snooze(context: Context, taskId: String, minutes: Int) {
+    fun snooze(context: Context, taskId: String, minutes: Int, speak: Boolean = true) {
         val repo = AppGraph.repo
         repo.postponeTask(taskId, minutes)
         val task = repo.taskById(taskId) ?: return
@@ -68,7 +68,7 @@ object ReminderEngine {
             )
             AlarmScheduler.scheduleTask(context, task)
         }.onFailure { CrashReporter.log(context, "Не удалось отложить задачу", it) }
-        if (settings.speakOnReminder) {
+        if (speak && settings.speakOnReminder) {
             runCatching {
                 AppGraph.speaker.speak("Хорошо, напомню в ${RuTime.formatTime(until)}", settings.speechRate)
             }

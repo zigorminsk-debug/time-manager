@@ -29,6 +29,7 @@ object AppGraph {
         repo = TaskRepository(context)
         settings = SettingsStore(context)
         speaker = Speaker(context)
+        speaker.setPitch(settings.value.voicePitch)
         Notifications.createChannels(context)
         repo.onChange = { data ->
             runCatching { AlarmScheduler.sync(context, data) }

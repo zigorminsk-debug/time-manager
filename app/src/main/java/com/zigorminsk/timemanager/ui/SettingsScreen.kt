@@ -1,8 +1,11 @@
 package com.zigorminsk.timemanager.ui
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -46,6 +49,8 @@ import com.zigorminsk.timemanager.model.Settings
 import com.zigorminsk.timemanager.util.CrashReporter
 import com.zigorminsk.timemanager.util.RuTime
 import com.zigorminsk.timemanager.place.PlaceMonitor
+import com.zigorminsk.timemanager.voice.VoiceEngine
+import com.zigorminsk.timemanager.voice.VoiceService
 import com.zigorminsk.timemanager.update.UpdateManager
 import java.io.File
 
@@ -55,12 +60,24 @@ fun SettingsScreen(
     onSettings: ((Settings) -> Settings) -> Unit,
     onCheckUpdate: () -> Unit,
     onSpeakTest: () -> Unit,
+    onOpenAssistant: () -> Unit = {},
     onMessage: (String) -> Unit,
 ) {
     val context = LocalContext.current
     var confirmClear by remember { mutableStateOf(false) }
     var showReport by remember { mutableStateOf(false) }
     val latestApk = remember { UpdateManager.latestApk(context) }
+    val micLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            onSettings { it.copy(voiceHandsFree = true) }
+            VoiceService.start(context)
+        } else {
+            onSettings { it.copy(voiceHandsFree = false) }
+            onMessage("Без доступа к микрофону фоновое прослушивание невозможно")
+        }
+    }
 
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
@@ -141,12 +158,87 @@ fun SettingsScreen(
                     valueRange = 0.6f..1.6f,
                     steps = 9,
                 )
+                Text("Тон голоса: ${"%.1f".format(settings.voicePitch)}", style = MaterialTheme.typography.bodyMedium)
+                Slider(
+                    value = settings.voicePitch,
+                    onValueChange = { value ->
+                        onSettings { it.copy(voicePitch = value) }
+                        AppGraph.speaker.setPitch(value)
+                    },
+                    valueRange = 0.8f..1.25f,
+                    steps = 8,
+                )
                 SecondaryButton(
                     text = "Проверить голос",
                     icon = AppIcons.Speaker,
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onSpeakTest,
                 )
+            }
+        }
+
+        item {
+            SettingsCard("Голосовой помощник") {
+                SwitchRow(
+                    "Живой голосовой помощник",
+                    "Кнопка микрофона на главном экране: слушаю, отвечаю голосом, выполняю команду",
+                    settings.liveVoice,
+                ) { value -> onSettings { it.copy(liveVoice = value) } }
+
+                ActionRow(
+                    title = "Открыть помощника",
+                    subtitle = if (VoiceEngine.hasMicrophone(context)) {
+                        "Скажите «${settings.wakePhrase}…» и команду"
+                    } else {
+                        "Нужно разрешение на микрофон"
+                    },
+                    action = "Открыть",
+                    onClick = onOpenAssistant,
+                )
+
+                Text("Фраза обращения", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    listOf(
+                        "слушай тайм" to "Слушай, Тайм",
+                        "эй тайм" to "Эй, Тайм",
+                        "слушай помощник" to "Помощник",
+                    ).forEach { (value, label) ->
+                        AppFilterChip(
+                            selected = settings.wakePhrase == value,
+                            text = label,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                onSettings { it.copy(wakePhrase = value) }
+                                VoiceEngine.updateWakePhrase(value)
+                            },
+                        )
+                    }
+                }
+
+                SwitchRow(
+                    "Слушать без рук в фоне",
+                    "Тихое уведомление и прослушивание фразы, пока приложение свёрнуто",
+                    settings.voiceHandsFree,
+                ) { value ->
+                    if (value) {
+                        if (VoiceEngine.hasMicrophone(context)) {
+                            onSettings { it.copy(voiceHandsFree = true) }
+                            VoiceService.start(context)
+                        } else {
+                            micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    } else {
+                        onSettings { it.copy(voiceHandsFree = false) }
+                        VoiceService.stop(context)
+                    }
+                }
+
+                SwitchRow(
+                    "Живые ответы",
+                    "Больше вариантов фраз и разговорных оборотов",
+                    settings.voiceChatty,
+                ) { value -> onSettings { it.copy(voiceChatty = value) } }
             }
         }
 
