@@ -769,19 +769,21 @@ object VoiceBrain {
      * не трогается, чтобы название задачи осталось человеческим.
      */
     fun digitsForTime(text: String): String {
+        val units = "один|одну|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|" +
+            "одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|шестнадцать|" +
+            "семнадцать|восемнадцать|девятнадцать"
         val pattern = Regex(
             "(?iuU)(?<![а-яё])(в|к|около|на|через|до|после|с)\\s+" +
-                "((?:двадцать|тридцать|сорок|пятьдесят)\\s+)?" +
-                "(один|одну|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|" +
-                "одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|шестнадцать|" +
-                "семнадцать|восемнадцать|девятнадцать)(?![а-яё])",
+                "(?:(двадцать|тридцать|сорок|пятьдесят)(?:\\s+($units))?|($units))(?![а-яё])",
         )
         return pattern.replace(text) { match ->
             val preposition = match.groupValues[1]
-            val tens = match.groupValues[2].trim().lowercase()
-            val unit = match.groupValues[3].lowercase()
-            val value = (if (tens.isEmpty()) 0 else NUMBER_WORDS[tens] ?: 0) +
-                (NUMBER_WORDS[unit] ?: 0)
+            val tens = match.groupValues[2].lowercase()
+            val unitAfterTens = match.groupValues[3].lowercase()
+            val unitAlone = match.groupValues[4].lowercase()
+            val value = (NUMBER_WORDS[tens] ?: 0) +
+                (NUMBER_WORDS[unitAfterTens] ?: 0) +
+                (NUMBER_WORDS[unitAlone] ?: 0)
             if (value <= 0) match.value else "$preposition $value"
         }
     }
