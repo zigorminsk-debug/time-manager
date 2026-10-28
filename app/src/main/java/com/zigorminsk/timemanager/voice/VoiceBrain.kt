@@ -2,6 +2,7 @@ package com.zigorminsk.timemanager.voice
 
 import com.zigorminsk.timemanager.model.Place
 import com.zigorminsk.timemanager.model.Task
+import com.zigorminsk.timemanager.util.RuSpeech
 import com.zigorminsk.timemanager.util.RuTime
 import com.zigorminsk.timemanager.util.RuTimeParser
 import java.time.Instant
@@ -126,9 +127,9 @@ object VoiceBrain {
             today.isEmpty() && ctx.tasks.none { it.isActive } ->
                 "Задач пока нет. Скажите «напомни…», и я запишу."
             today.isEmpty() -> "На сегодня задач нет. Можно отдохнуть."
-            next != null -> "На сегодня ${today.size} ${plural(today.size, "задача", "задачи", "задач")}. " +
+            next != null -> "На сегодня " + RuSpeech.count(today.size, "задача", "задачи", "задач") + ". " +
                 "Ближайшая — «${next.title}», ${untilText(next.dueAt!!, ctx)}."
-            else -> "На сегодня ${today.size} ${plural(today.size, "задача", "задачи", "задач")}."
+            else -> "На сегодня " + RuSpeech.count(today.size, "задача", "задачи", "задач") + "."
         }
         return VoiceReply(
             spoken = tail,
@@ -218,10 +219,19 @@ object VoiceBrain {
             hasPhrase(n, "какой сегодня день") || hasPhrase(n, "какой день недели")
         ) {
             val zdt = Instant.ofEpochMilli(ctx.now).atZone(ctx.zone)
-            val weekday = RuTime.WEEKDAYS_NOM[zdt.dayOfWeek.value - 1]
-            val date = "${zdt.dayOfMonth} ${RuTime.MONTHS_GEN[zdt.monthValue - 1]}"
+            val weekday = when (zdt.dayOfWeek.value) {
+                1 -> "понедельник"
+                2 -> "вторник"
+                3 -> "среда"
+                4 -> "четверг"
+                5 -> "пятница"
+                6 -> "суббота"
+                else -> "воскресенье"
+            }
+            val date = "${RuSpeech.ordinalGenitive(zdt.dayOfMonth)} " +
+                RuTime.MONTHS_GEN[zdt.monthValue - 1]
             return VoiceReply(
-                spoken = "Сейчас ${RuTime.hhmm(zdt.hour, zdt.minute)}. Сегодня $weekday, $date.",
+                spoken = "Сейчас ${RuSpeech.clock(zdt.hour, zdt.minute)}. Сегодня $weekday, $date.",
                 hints = DEFAULT_HINTS,
             )
         }
@@ -232,9 +242,9 @@ object VoiceBrain {
             val timeOnly = timeOnly(text, ctx)
             if (timeOnly != null) {
                 val (millis, hasTime) = timeOnly
-                val whenText = RuTime.formatDue(millis, hasTime, ctx.now, ctx.zone).lowercase()
+                val whenText = RuTime.speakDue(millis, hasTime, ctx.now, ctx.zone)
                 return VoiceReply(
-                    spoken = "Хорошо, «${ctx.pendingTitle}» — $whenText. Напомню.",
+                    spoken = "Хорошо, «${ctx.pendingTitle}». Напомню $whenText.",
                     action = VoiceAction.SetDue(pendingId, millis, hasTime),
                     hints = listOf("Что на сегодня?", "Что дальше?", "Выполни первую"),
                     taskIds = listOf(pendingId),
@@ -269,9 +279,14 @@ object VoiceBrain {
         ) {
             val active = ctx.tasks.filter { it.isActive }
             val overdue = active.count { it.dueAt != null && it.dueAt < ctx.now }
-            val tail = if (overdue > 0) " Из них $overdue ${plural(overdue, "просрочена", "просрочены", "просрочено")}." else ""
+            val tail = if (overdue > 0) {
+                val verb = if (overdue % 10 == 1 && overdue % 100 != 11) "просрочена" else "просрочено"
+                " Из них ${RuSpeech.count(overdue, "задача", "задачи", "задач")} $verb."
+            } else {
+                ""
+            }
             return VoiceReply(
-                spoken = "Активных ${plural(active.size, "задача", "задачи", "задач")}: ${active.size}.$tail",
+                spoken = "Активных " + RuSpeech.count(active.size, "задача", "задачи", "задач") + ".$tail",
                 hints = listOf("Что на сегодня?", "Что просрочено", "Что дальше?"),
                 taskIds = active.map { it.id },
             )
@@ -321,9 +336,13 @@ object VoiceBrain {
                 )
             }
             val shown = active.take(3)
-            val tail = if (active.size > shown.size) " И ещё ${active.size - shown.size}." else ""
+            val tail = if (active.size > shown.size) {
+                " И ещё ${RuSpeech.count(active.size - shown.size, "задача", "задачи", "задач")}."
+            } else {
+                ""
+            }
             return VoiceReply(
-                spoken = "Активных ${plural(active.size, "задача", "задачи", "задач")}: ${active.size}. " +
+                spoken = "Активных " + RuSpeech.count(active.size, "задача", "задачи", "задач") + ". " +
                     shown.joinToString(". ") { describeTask(it, ctx) } + "." + tail,
                 hints = listOf("Выполни первую", "Что на сегодня?", "Что просрочено"),
                 taskIds = active.map { it.id },
@@ -447,7 +466,7 @@ object VoiceBrain {
                 )
             }
             val movedHasTime = (parsed?.hasTime ?: false) || hasPeriodWord(body)
-            val whenText = RuTime.formatDue(millis, movedHasTime, ctx.now, ctx.zone).lowercase()
+            val whenText = RuTime.speakDue(millis, movedHasTime, ctx.now, ctx.zone)
             return VoiceReply(
                 spoken = "«${task.title}» перенесена на $whenText.",
                 action = VoiceAction.MoveTask(task.id, task.title, millis, movedHasTime),
@@ -550,7 +569,7 @@ object VoiceBrain {
 
         val speech = when {
             dueAt != null -> {
-                val whenText = RuTime.formatDue(dueAt, hasTime, ctx.now, ctx.zone).lowercase()
+                val whenText = RuTime.speakDue(dueAt, hasTime, ctx.now, ctx.zone)
                 "${pick(seed, "Записано", "Готово", "Добавлено")}: «${RuTime.capitalize(title)}». Напомню $whenText."
             }
             place != null -> {
@@ -573,10 +592,12 @@ object VoiceBrain {
 
     private fun snoozeReply(task: Task, minutes: Int, ctx: VoiceContext, seed: Int): VoiceReply {
         val until = ctx.now + minutes * 60_000L
-        val time = RuTime.formatTime(until, ctx.zone)
-        val period = when {
-            minutes % 60 == 0 && minutes >= 60 -> "${minutes / 60} ${plural(minutes / 60, "час", "часа", "часов")}"
-            else -> "$minutes ${plural(minutes, "минуту", "минуты", "минут")}"
+        val zdt = Instant.ofEpochMilli(until).atZone(ctx.zone)
+        val time = RuSpeech.clock(zdt.hour, zdt.minute)
+        val period = if (minutes % 60 == 0 && minutes >= 60) {
+            RuSpeech.count(minutes / 60, "час", "часа", "часов")
+        } else {
+            RuSpeech.count(minutes, "минуту", "минуты", "минут")
         }
         return VoiceReply(
             spoken = pick(
@@ -620,9 +641,13 @@ object VoiceBrain {
             )
         }
         val shown = sorted.take(3)
-        val head = "На $day ${sorted.size} ${plural(sorted.size, "задача", "задачи", "задач")}."
+        val head = "На $day " + RuSpeech.count(sorted.size, "задача", "задачи", "задач") + "."
         val body = shown.joinToString(". ") { describeTask(it, ctx) }
-        val tail = if (sorted.size > shown.size) " И ещё ${sorted.size - shown.size}." else ""
+        val tail = if (sorted.size > shown.size) {
+            " И ещё ${RuSpeech.cardinal(sorted.size - shown.size)}."
+        } else {
+            ""
+        }
         return VoiceReply(
             spoken = "$head $body.$tail",
             hints = listOf("Что дальше?", "Выполни первую", "Что просрочено"),
@@ -631,17 +656,23 @@ object VoiceBrain {
     }
 
     private fun describeTask(task: Task, ctx: VoiceContext): String {
-        val whenText = task.dueAt?.let { RuTime.formatDue(it, task.hasTime, ctx.now, ctx.zone) }
+        val whenText = task.dueAt?.let { RuTime.speakDue(it, task.hasTime, ctx.now, ctx.zone) }
         return when {
-            whenText != null -> "$whenText — ${task.title}"
-            task.placeId != null -> "По прибытии в «${task.placeName.ifBlank { "место" }}» — ${task.title}"
+            whenText != null -> "${RuSpeech.sentence(whenText)} — ${task.title}"
+            task.placeId != null -> "Когда буду в «${task.placeName.ifBlank { "место" }}» — ${task.title}"
             else -> task.title
         }
     }
 
     private fun overdueNote(ctx: VoiceContext): String {
         val count = ctx.tasks.count { it.isActive && it.dueAt != null && it.dueAt < ctx.now }
-        return if (count > 0) " Просрочено: $count." else ""
+        return if (count > 0) {
+            val verb = if (count % 10 == 1 && count % 100 != 11) "просрочена" else "просрочено"
+            " Просрочено: ${RuSpeech.cardinal(count, true)} " +
+                RuSpeech.plural(count, "задача", "задачи", "задач") + " $verb."
+        } else {
+            ""
+        }
     }
 
     private fun notFound(query: String, ctx: VoiceContext, seed: Int, what: String): VoiceReply {
@@ -755,46 +786,20 @@ object VoiceBrain {
     )
 
     private fun untilText(millis: Long, ctx: VoiceContext): String {
-        val diff = millis - ctx.now
-        return when {
-            diff <= 0 -> "уже пора"
-            diff < 60_000L -> "меньше чем через минуту"
-            diff < 3_600_000L -> {
-                val minutes = (diff / 60_000L).toInt()
-                "через $minutes ${plural(minutes, "минуту", "минуты", "минут")}"
-            }
-            diff < 6 * 3_600_000L -> {
-                val hours = (diff / 3_600_000L).toInt()
-                "через $hours ${plural(hours, "час", "часа", "часов")}"
-            }
-            else -> RuTime.formatDue(millis, true, ctx.now, ctx.zone).lowercase()
+        val relative = RuSpeech.relativePhrase(millis, ctx.now)
+        return if (relative.isNotBlank()) {
+            relative
+        } else {
+            RuTime.speakDue(millis, true, ctx.now, ctx.zone)
         }
     }
 
     /**
-     * Заменяет числительные цифрами там, где это время: «в девять» → «в 9»,
-     * «через двадцать минут» → «через 20 минут». Остальной текст («купить два хлеба»)
-     * не трогается, чтобы название задачи осталось человеческим.
+     * Числительные словами → цифры там, где речь о времени.
+     * Реальная работа живёт в [RuTimeParser.digitsForTime], чтобы диктовка в редакторе
+     * задачи и голосовой ассистент разбирали фразы одинаково.
      */
-    fun digitsForTime(text: String): String {
-        val units = "один|одну|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|" +
-            "одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|шестнадцать|" +
-            "семнадцать|восемнадцать|девятнадцать"
-        val pattern = Regex(
-            "(?iuU)(?<![а-яё])(в|к|около|на|через|до|после|с)\\s+" +
-                "(?:(двадцать|тридцать|сорок|пятьдесят)(?:\\s+($units))?|($units))(?![а-яё])",
-        )
-        return pattern.replace(text) { match ->
-            val preposition = match.groupValues[1]
-            val tens = match.groupValues[2].lowercase()
-            val unitAfterTens = match.groupValues[3].lowercase()
-            val unitAlone = match.groupValues[4].lowercase()
-            val value = (NUMBER_WORDS[tens] ?: 0) +
-                (NUMBER_WORDS[unitAfterTens] ?: 0) +
-                (NUMBER_WORDS[unitAlone] ?: 0)
-            if (value <= 0) match.value else "$preposition $value"
-        }
-    }
+    fun digitsForTime(text: String): String = RuTimeParser.digitsForTime(text)
 
     /** Фраза состоит только из времени: «на 20 минут», «через час», «на полчаса». */
     private fun isBareTimePhrase(n: String): Boolean {

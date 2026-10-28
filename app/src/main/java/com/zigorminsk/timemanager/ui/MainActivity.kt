@@ -65,6 +65,7 @@ import com.zigorminsk.timemanager.notify.ReminderEngine
 import com.zigorminsk.timemanager.place.PlaceMonitor
 import com.zigorminsk.timemanager.update.UpdateManager
 import com.zigorminsk.timemanager.util.CrashReporter
+import com.zigorminsk.timemanager.util.RuSpeech
 import com.zigorminsk.timemanager.util.RuTime
 import com.zigorminsk.timemanager.voice.VoiceEngine
 import com.zigorminsk.timemanager.voice.VoiceService
@@ -440,7 +441,12 @@ fun AppRoot() {
                         onSpeakTest = {
                             AppGraph.speaker.setPitch(settings.voicePitch)
                             AppGraph.speaker.speakLive(
-                                "Привет! Я напомню о задачах. Сейчас " + RuTime.formatTime(System.currentTimeMillis()) + ".",
+                                "Привет! Я напомню о задачах. Сейчас " +
+                                    run {
+                                        val zdt = java.time.Instant.ofEpochMilli(System.currentTimeMillis())
+                                            .atZone(java.time.ZoneId.systemDefault())
+                                        RuSpeech.clock(zdt.hour, zdt.minute)
+                                    } + ".",
                                 settings.speechRate,
                                 settings.voicePitch,
                             )

@@ -115,31 +115,43 @@ fun TaskEditorSheet(
     val speechLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
-        val text = Dictation.extract(result.resultCode, result.data)
+        // Берём все варианты распознавания: первый нередко оказывается словами
+        // («через пятнадцать минут»), второй — цифрами, и наоборот.
+        val variants = Dictation.extractAll(result.resultCode, result.data)
+        val text = variants.firstOrNull()
         if (text.isNullOrBlank()) {
-            onMessage("Не удалось распознать речь. Проверьте службу распознавания Google.")
+            onMessage("Не расслышал. Скажите ещё раз или впишите время вручную.")
             return@rememberLauncherForActivityResult
         }
         when (dictationTarget) {
             DictationTarget.TITLE -> {
-                title = text
-                val p = runCatching { RuTimeParser.parse(text) }.getOrNull()
-                if (p?.millis != null) {
-                    dueAt = p.millis
-                    hasTime = p.hasTime
-                    title = p.title
+                val withTime = variants.firstNotNullOfOrNull { variant ->
+                    runCatching { RuTimeParser.parse(variant) }.getOrNull()?.takeIf { it.millis != null }
+                }
+                if (withTime != null) {
+                    dueAt = withTime.millis
+                    hasTime = withTime.hasTime
+                    title = withTime.title.ifBlank { text }
+                } else {
+                    title = text
                 }
             }
             DictationTarget.NOTE -> {
                 note = if (note.isBlank()) text else "$note. $text"
             }
             DictationTarget.DATETIME -> {
-                val p = runCatching { RuTimeParser.parse(text) }.getOrNull()
-                if (p?.millis == null) {
-                    onMessage("Не понял дату. Скажите, например: «завтра в три часа дня»")
+                val found = variants.firstNotNullOfOrNull { variant ->
+                    runCatching { RuTimeParser.parse(variant) }.getOrNull()?.takeIf { it.millis != null }
+                }
+                val millis = found?.millis
+                if (millis == null) {
+                    onMessage(
+                        "Не понял время в «${text.take(40)}». Скажите короче: " +
+                            "«через пятнадцать минут», «завтра в девять» или «в пятницу в шесть вечера».",
+                    )
                 } else {
-                    dueAt = p.millis
-                    hasTime = p.hasTime
+                    dueAt = millis
+                    hasTime = found.hasTime
                 }
             }
         }

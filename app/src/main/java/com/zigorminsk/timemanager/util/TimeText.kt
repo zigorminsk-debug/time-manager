@@ -106,47 +106,74 @@ object RuTime {
         return next.toInstant().toEpochMilli()
     }
 
-    /** Одна фраза для озвучки задачи. */
+    /**
+     * Дата и время так, как их произносит человек — без предлога:
+     * «завтра в девять часов утра», «в пятницу в три тридцать дня», «двенадцатого ноября».
+     */
+    fun speakDue(
+        millis: Long,
+        hasTime: Boolean,
+        now: Long = System.currentTimeMillis(),
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): String = RuSpeech.duePhrase(millis, hasTime, now, zone)
+
+    /**
+     * Озвучка одной задачи: короткие предложения с точками, полные слова,
+     * правильные падежи. Синтезатор делает паузу на каждой точке, поэтому
+     * заголовок больше не склеивается с датой в одну неразборчивую тираду.
+     */
     fun speakTask(
         task: Task,
         now: Long = System.currentTimeMillis(),
         zone: ZoneId = ZoneId.systemDefault(),
     ): String {
-        val sb = StringBuilder(task.title)
+        val parts = mutableListOf(RuSpeech.sentence(task.title.trimEnd('.', '!', '?')))
         task.dueAt?.let { due ->
-            val zdt = zonedOrNull(due, zone) ?: return@let
-            val today = zonedOrNull(now, zone)?.toLocalDate() ?: LocalDate.now(zone)
-            sb.append(", ").append(dayLabel(zdt.toLocalDate(), today))
-            if (task.hasTime) {
-                sb.append(" в ").append(zdt.hour)
-                if (zdt.minute > 0) sb.append(" ").append(zdt.minute)
-            }
+            val whenText = speakDue(due, task.hasTime, now, zone)
+            parts += RuSpeech.sentence(whenText)
         }
         if (task.placeId != null) {
-            sb.append(", по прибытии: ").append(task.placeName.ifBlank { "место" })
+            val place = task.placeName.ifBlank { "место" }
+            parts += "Когда буду на месте — $place"
         }
-        return sb.toString()
+        task.repeat.takeIf { it != RepeatRule.NONE }?.let { rule ->
+            parts += when (rule) {
+                RepeatRule.DAILY -> "Каждый день"
+                RepeatRule.WEEKDAYS -> "По будням"
+                RepeatRule.WEEKLY -> "Каждую неделю"
+                RepeatRule.MONTHLY -> "Каждый месяц"
+                RepeatRule.NONE -> ""
+            }
+        }
+        return parts.filter { it.isNotBlank() }.joinToString(". ") + "."
     }
 
-    /** Текст «проговорить день». */
+    /** Текст «проговорить день» — числа словами и с правильным родом. */
     fun speakDay(
         tasks: List<Task>,
         placeTasks: List<Task>,
         now: Long = System.currentTimeMillis(),
         zone: ZoneId = ZoneId.systemDefault(),
     ): String {
-        if (tasks.isEmpty() && placeTasks.isEmpty()) return "На сегодня задач нет. Отдыхайте!"
+        val total = tasks.size + placeTasks.size
+        if (total == 0) return "На сегодня задач нет. Отдыхайте!"
+
         val sb = StringBuilder()
-        sb.append("Задач на сегодня: ").append(tasks.size + placeTasks.size).append(". ")
+        sb.append("На сегодня ").append(RuSpeech.count(total, "задача", "задачи", "задач")).append(". ")
+
         val overdue = tasks.filter { it.dueAt != null && it.dueAt < now }
         val actual = tasks.filter { it.dueAt == null || it.dueAt >= now }
         if (overdue.isNotEmpty()) {
-            sb.append("Просрочено: ").append(overdue.size).append(". ")
-            overdue.forEach { sb.append(speakTask(it, now, zone)).append(". ") }
+            val one = overdue.size % 10 == 1 && overdue.size % 100 != 11
+            val verb = if (one) "просрочена" else "просрочены"
+            val head = "${RuSpeech.cardinal(overdue.size, true)} " +
+                RuSpeech.plural(overdue.size, "задача", "задачи", "задач")
+            sb.append(RuSpeech.sentence("$head $verb")).append(". ")
+            overdue.forEach { sb.append(speakTask(it, now, zone)).append(" ") }
         }
-        actual.forEach { sb.append(speakTask(it, now, zone)).append(". ") }
-        placeTasks.forEach { sb.append(speakTask(it, now, zone)).append(". ") }
-        return sb.toString()
+        actual.forEach { sb.append(speakTask(it, now, zone)).append(" ") }
+        placeTasks.forEach { sb.append(speakTask(it, now, zone)).append(" ") }
+        return sb.toString().replace(Regex("\\s+"), " ").trim()
     }
 }
 
@@ -178,16 +205,76 @@ object RuTimeParser {
         "субботы" to 6, "воскресенье" to 7, "воскресенья" to 7,
     )
 
+    private val NUMBER_WORD_VALUES = mapOf(
+        "ноль" to 0, "один" to 1, "одну" to 1, "одна" to 1, "два" to 2, "две" to 2,
+        "три" to 3, "четыре" to 4, "пять" to 5, "шесть" to 6, "семь" to 7,
+        "восемь" to 8, "девять" to 9, "десять" to 10, "одиннадцать" to 11,
+        "двенадцать" to 12, "тринадцать" to 13, "четырнадцать" to 14,
+        "пятнадцать" to 15, "шестнадцать" to 16, "семнадцать" to 17,
+        "восемнадцать" to 18, "девятнадцать" to 19, "двадцать" to 20,
+        "тридцать" to 30, "сорок" to 40, "пятьдесят" to 50,
+        "шестьдесят" to 60, "семьдесят" to 70, "восемьдесят" to 80, "девяносто" to 90,
+    )
+
+    private const val UNITS_WORDS = "один|одну|одна|два|две|три|четыре|пять|шесть|семь|восемь|" +
+        "девять|десять|одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|" +
+        "шестнадцать|семнадцать|восемнадцать|девятнадцать"
+
+    /**
+     * Заменяет числительные цифрами там, где речь о времени:
+     * «в девять вечера» → «в 9 вечера», «через двадцать минут» → «через 20 минут»,
+     * «минут через пятнадцать» → «минут через 15».
+     * «купить два хлеба» остаётся словами — это часть названия задачи.
+     */
+    fun digitsForTime(text: String): String {
+        // Сначала «час + минуты» словами: «в шесть тридцать» → «в 6:30».
+        val numberWords = "(?:(?:двадцать|тридцать|сорок|пятьдесят)(?:\\s+(?:$UNITS_WORDS))?|(?:$UNITS_WORDS))"
+        val timePair = Regex(
+            "(?iuU)(?<![а-яё])(в|к|около|на)\\s+($numberWords)\\s+($numberWords)(?![а-яё])",
+        )
+        var out = timePair.replace(text) { match ->
+            val preposition = match.groupValues[1]
+            val hour = NUMBER_WORD_VALUES[match.groupValues[2].lowercase()]
+            val minute = NUMBER_WORD_VALUES[match.groupValues[3].lowercase()]
+            if (hour != null && minute != null && hour in 0..23 && minute in 0..59) {
+                "$preposition $hour:${minute.toString().padStart(2, '0')}"
+            } else {
+                match.value
+            }
+        }
+        val withTens = Regex(
+            "(?iuU)(?<![а-яё])(в|к|около|на|через|до|после|с)\\s+" +
+                "(?:(двадцать|тридцать|сорок|пятьдесят)(?:\\s+($UNITS_WORDS))?|($UNITS_WORDS))" +
+                "(?![а-яё])",
+        )
+        out = withTens.replace(out) { match ->
+            val preposition = match.groupValues[1]
+            val tens = match.groupValues[2].lowercase()
+            val unitAfterTens = match.groupValues[3].lowercase()
+            val unitAlone = match.groupValues[4].lowercase()
+            val value = (NUMBER_WORD_VALUES[tens] ?: 0) +
+                (NUMBER_WORD_VALUES[unitAfterTens] ?: 0) +
+                (NUMBER_WORD_VALUES[unitAlone] ?: 0)
+            if (value <= 0) match.value else "$preposition $value"
+        }
+        return out
+    }
+
     fun parse(
         raw: String,
         now: Long = System.currentTimeMillis(),
         zone: ZoneId = ZoneId.systemDefault(),
     ): Parsed {
+        // Числительные словами — в цифры: «через пятнадцать минут» = «через 15 минут».
+        // Диктовка и быстрый ввод приходят в разном виде, разбор должен понимать оба.
+        // Важно: обе строки получаются из одного и того же текста, иначе индексы
+        // найденных фрагментов разъедутся и вырезание испортит название задачи.
+        val normalized = digitsForTime(raw)
         // Нижний регистр — посимвольно (1:1), чтобы индексы в work и out всегда совпадали:
         // некоторые символы (İ, ǅ…) при lowercase() меняют длину строки, и вырезание
         // найденных фрагментов падало с StringIndexOutOfBoundsException.
-        var work = foldToLower(raw)
-        var out = raw
+        var work = foldToLower(normalized)
+        var out = normalized
         var matched: String? = null
 
         val nowZdt = Instant.ofEpochMilli(now).atZone(zone)
@@ -231,6 +318,35 @@ object RuTimeParser {
         }
         if (relativeMinutes == null && date == null) {
             take(Regex("(?U)через\\s+час(?!\\w)")) { relativeMinutes = 60L; explicitTime = true }
+        }
+        if (relativeMinutes == null && date == null) {
+            take(Regex("(?U)через\\s+четверть\\s+часа")) { relativeMinutes = 15L; explicitTime = true }
+        }
+        if (relativeMinutes == null && date == null) {
+            take(Regex("(?U)через\\s+(\\d+)[.,](\\d+)\\s*час(?:а|ов)?\\b")) {
+                val hours = it.groupValues[1].toLongOrNull() ?: 0L
+                val fraction = it.groupValues[2].toLongOrNull() ?: 0L
+                val fractionMinutes = if (fraction < 10) fraction * 6 else fraction
+                relativeMinutes = hours * 60L + fractionMinutes
+                explicitTime = true
+            }
+        }
+        // «минут через пятнадцать», «часа через два» — обратный порядок слов
+        if (relativeMinutes == null && date == null) {
+            take(Regex("(?U)минут(?:у|ы)?\\s+через\\s+(\\d{1,2})\\b")) {
+                relativeMinutes = it.groupValues[1].toLongOrNull()
+                explicitTime = true
+            }
+        }
+        if (relativeMinutes == null && date == null) {
+            take(Regex("(?U)час(?:а)?\\s+через\\s+(\\d{1,2})\\b")) {
+                relativeMinutes = it.groupValues[1].toLongOrNull()?.times(60L)
+                explicitTime = true
+            }
+        }
+        // «полчаса», «через полчаса» без предлога
+        if (relativeMinutes == null && date == null) {
+            take(Regex("(?U)(?<![а-яё])пол\\s*часа(?![а-яё])")) { relativeMinutes = 30L; explicitTime = true }
         }
         if (relativeMinutes == null && date == null) {
             take(Regex("(?U)через\\s+(\\d+)\\s*(?:минут[уы]?|мин)\\b")) {
@@ -347,12 +463,15 @@ object RuTimeParser {
 
         // 5.1 «15:30», «в 15.30»
         if (hour == null) {
-            val m = Regex("(?U)(?<![\\d])(?:в|к|около)?\\s*(\\d{1,2})\\s*[:.]\\s*(\\d{2})(?![\\d])").find(work)
+            val m = Regex(
+                "(?U)(?<![\\d])(?:в|к|около)?\\s*(\\d{1,2})\\s*[:.]\\s*(\\d{2})" +
+                    "(?![\\d])\\s*($PERIOD)?(?![а-яё])",
+            ).find(work)
             if (m != null) {
                 val h = m.groupValues[1].toIntOrNull() ?: -1
                 val mi = m.groupValues[2].toIntOrNull() ?: -1
                 if (h in 0..23 && mi in 0..59) {
-                    hour = h
+                    hour = applyPeriod(h, m.groupValues[3])
                     minute = mi
                     explicitTime = true
                     handle(m) { }
@@ -475,7 +594,7 @@ object RuTimeParser {
             .replace(Regex("(?U)\\s+(в|во|к|на|и|по)$"), "")
             .replace(Regex("(?U)[\\s,.;:!?—–-]+$"), "")
             .trim()
-        if (title.isBlank()) title = raw.trim()
+        if (title.isBlank()) title = normalized.trim()
 
         return Parsed(
             millis = millis,
