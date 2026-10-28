@@ -474,7 +474,21 @@ object VoiceEngine {
             listening = false,
             error = null,
         )
-        val reply = VoiceSession.execute(ctx, command)
+        // Разбор и запись задачи — на фоновом потоке: список задач может быть большим,
+        // а UI не должен «замирать» между фразами.
+        val worker = Thread {
+            val reply = VoiceSession.execute(ctx, command)
+            main.post {
+                if (!active) return@post
+                deliverReply(ctx, reply)
+            }
+        }
+        worker.name = "tm-voice-command"
+        worker.isDaemon = true
+        worker.start()
+    }
+
+    private fun deliverReply(ctx: Context, reply: VoiceReply) {
         if (reply.spoken.isNotBlank()) push(VoiceLine(false, reply.spoken))
         _state.value = _state.value.copy(hints = reply.hints.ifEmpty { defaultHints })
 
@@ -556,11 +570,17 @@ object VoiceEngine {
         when {
             misses == 1 -> speakThenListen(ctx, "Не расслышал. Повторите, пожалуйста.") { listenCommand() }
             misses == 2 -> {
-                _state.value = _state.value.copy(
-                    phase = VoicePhase.IDLE,
-                    hints = defaultHints,
-                    listening = false,
-                )
+                if (handsFree) {
+                    // В фоне не оставляем микрофон «мёртвым»: возвращаемся к фразе-обращению.
+                    misses = 0
+                    listenWake()
+                } else {
+                    _state.value = _state.value.copy(
+                        phase = VoicePhase.IDLE,
+                        hints = defaultHints,
+                        listening = false,
+                    )
+                }
             }
             else -> {
                 misses = 0
@@ -613,6 +633,18 @@ object VoiceEngine {
             }
 
             SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> schedule(700) { if (active) listen(awaitWake) }
+
+            // Google ограничивает частоту запросов: в фоне ждём дольше и пробуем снова.
+            SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> {
+                failures += 1
+                val delay = (15_000L * failures.coerceAtMost(4)).coerceAtMost(60_000L)
+                _state.value = _state.value.copy(
+                    phase = VoicePhase.ERROR,
+                    error = "Слишком много запросов к распознаванию. Подожду немного.",
+                    listening = false,
+                )
+                if (handsFree) schedule(delay) { if (active) listenWake() }
+            }
 
             SpeechRecognizer.ERROR_CLIENT -> schedule(350) { if (active) listen(awaitWake) }
 

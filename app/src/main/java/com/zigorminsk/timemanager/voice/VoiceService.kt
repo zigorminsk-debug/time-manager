@@ -49,6 +49,7 @@ class VoiceService : Service() {
         }
         return runCatching {
             startAsForeground()
+            AppGraph.settings.update { it.copy(voiceHandsFree = true) }
             VoiceEngine.onServiceStarted(this)
             observeState()
             START_STICKY

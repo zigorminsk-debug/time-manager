@@ -13,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -29,6 +30,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -102,15 +105,19 @@ fun VoiceAssistantOverlay(
         onDismissRequest = onClose,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        Box(
+        BoxWithConstraints(
             Modifier
                 .fillMaxSize()
                 .background(Brush.verticalGradient(listOf(NightTop, NightBottom)))
                 .systemBarsPadding(),
         ) {
+            // В ландшафте и на низких экранах включаем прокрутку и уменьшаем сферу,
+            // чтобы кнопки микрофона и «Стоп» всегда оставались на виду.
+            val compact = maxHeight < 620.dp
             Column(
                 Modifier
                     .fillMaxSize()
+                    .then(if (compact) Modifier.verticalScroll(rememberScrollState()) else Modifier)
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -122,7 +129,7 @@ fun VoiceAssistantOverlay(
 
                 Spacer(Modifier.height(4.dp))
 
-                VoiceStage(state = state)
+                VoiceStage(state = state, compact = compact)
 
                 if (!micGranted) {
                     Surface(
@@ -164,7 +171,11 @@ fun VoiceAssistantOverlay(
 
                     VoiceHistory(
                         history = state.history,
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        modifier = if (compact) {
+                            Modifier.height(150.dp).fillMaxWidth()
+                        } else {
+                            Modifier.weight(1f).fillMaxWidth()
+                        },
                     )
                 }
 
@@ -213,6 +224,9 @@ fun VoiceAssistantOverlay(
         }
     }
 }
+
+private fun safeIconSize(orb: androidx.compose.ui.unit.Dp): androidx.compose.ui.unit.Dp =
+    if (orb < 180.dp) 36.dp else 56.dp
 
 // ------------------------------------------------------------------ части экрана
 
@@ -280,7 +294,7 @@ private fun VoiceHeader(
 }
 
 @Composable
-private fun VoiceStage(state: VoiceUiState) {
+private fun VoiceStage(state: VoiceUiState, compact: Boolean = false) {
     val pulse by rememberInfiniteTransition(label = "orb").animateFloat(
         initialValue = 0.96f,
         targetValue = 1.06f,
@@ -321,19 +335,22 @@ private fun VoiceStage(state: VoiceUiState) {
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(if (compact) 4.dp else 10.dp))
         VoiceOrb(
             color = color,
             level = if (activeListening || state.phase == VoicePhase.SPEAKING) level else 0.12f,
             pulse = pulse,
             thinking = state.phase == VoicePhase.THINKING,
+            size = if (compact) 140.dp else 210.dp,
         )
-        Spacer(Modifier.height(6.dp))
-        Waveform(
-            level = if (activeListening) level else if (state.phase == VoicePhase.SPEAKING) 0.55f else 0.08f,
-            phase = phase,
-            color = color,
-        )
+        if (!compact) {
+            Spacer(Modifier.height(6.dp))
+            Waveform(
+                level = if (activeListening) level else if (state.phase == VoicePhase.SPEAKING) 0.55f else 0.08f,
+                phase = phase,
+                color = color,
+            )
+        }
         Text(
             state.hintLine,
             color = Color.White.copy(alpha = 0.55f),
@@ -350,8 +367,9 @@ private fun VoiceOrb(
     level: Float,
     pulse: Float,
     thinking: Boolean,
+    size: androidx.compose.ui.unit.Dp = 210.dp,
 ) {
-    Box(Modifier.size(210.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2f, size.height / 2f)
             val base = size.minDimension / 2f
@@ -394,7 +412,7 @@ private fun VoiceOrb(
                 AppIcons.Mic,
                 contentDescription = null,
                 tint = Color.White,
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier.size(safeIconSize(size)),
             )
         }
     }

@@ -232,6 +232,10 @@ fun AppRoot() {
         }
     }
 
+    LaunchedEffect(Unit) {
+        if (voiceOpen && !VoiceEngine.isActive()) VoiceEngine.open(context)
+    }
+
     val actions = TaskActions(
         edit = { editing = it; editorOpen = true },
         done = { ReminderEngine.complete(context, it.id) },
@@ -254,8 +258,10 @@ fun AppRoot() {
                         Text(currentTab.title, fontWeight = FontWeight.SemiBold)
                     },
                     actions = {
-                        IconButton(onClick = openAssistant) {
-                            Icon(AppIcons.Mic, contentDescription = "Голосовой помощник")
+                        if (settings.liveVoice) {
+                            IconButton(onClick = openAssistant) {
+                                Icon(AppIcons.Mic, contentDescription = "Голосовой помощник")
+                            }
                         }
                     },
                 )
@@ -338,6 +344,7 @@ fun AppRoot() {
                         },
                         onStopSpeaking = { AppGraph.speaker.stop() },
                         onVoiceAssistant = openAssistant,
+                        showVoiceButton = settings.liveVoice,
                         header = {
                             if (!notificationsEnabled(context)) {
                                 PermissionCard(
@@ -431,9 +438,11 @@ fun AppRoot() {
                             }
                         },
                         onSpeakTest = {
-                            AppGraph.speaker.speak(
+                            AppGraph.speaker.setPitch(settings.voicePitch)
+                            AppGraph.speaker.speakLive(
                                 "Привет! Я напомню о задачах. Сейчас " + RuTime.formatTime(System.currentTimeMillis()) + ".",
                                 settings.speechRate,
+                                settings.voicePitch,
                             )
                         },
                         onOpenAssistant = openAssistant,
