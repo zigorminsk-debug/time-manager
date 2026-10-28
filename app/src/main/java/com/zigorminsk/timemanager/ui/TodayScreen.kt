@@ -37,6 +37,7 @@ fun TodayScreen(
     actions: TaskActions,
     onSpeakDay: () -> Unit,
     onStopSpeaking: () -> Unit,
+    onVoiceAssistant: () -> Unit = {},
     header: @Composable () -> Unit = {},
 ) {
     val zone = ZoneId.systemDefault()
@@ -90,6 +91,13 @@ fun TodayScreen(
                         icon = if (speaking) AppIcons.Stop else AppIcons.Speaker,
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { if (speaking) onStopSpeaking() else onSpeakDay() },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    SecondaryButton(
+                        text = "Спросить голосом",
+                        icon = AppIcons.Mic,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onVoiceAssistant,
                     )
                 }
             }

@@ -336,6 +336,12 @@ class SettingsStore(context: Context) {
             .putBoolean("silentNoDnd", next.silentNoDnd)
             .putBoolean("fullScreenReminder", next.fullScreenReminder)
             .putLong("lastUpdateCheck", next.lastUpdateCheck)
+            .putBoolean("liveVoice", next.liveVoice)
+            .putBoolean("voiceHandsFree", next.voiceHandsFree)
+            .putString("wakePhrase", next.wakePhrase)
+            .putFloat("voicePitch", next.voicePitch)
+            .putBoolean("voiceChatty", next.voiceChatty)
+            .putInt("voiceFollowUps", next.voiceFollowUps)
             .apply()
     }
 
@@ -353,5 +359,11 @@ class SettingsStore(context: Context) {
         silentNoDnd = prefs.getBoolean("silentNoDnd", true),
         fullScreenReminder = prefs.getBoolean("fullScreenReminder", true),
         lastUpdateCheck = prefs.getLong("lastUpdateCheck", 0L),
+        liveVoice = prefs.getBoolean("liveVoice", true),
+        voiceHandsFree = prefs.getBoolean("voiceHandsFree", false),
+        wakePhrase = prefs.getString("wakePhrase", "слушай тайм") ?: "слушай тайм",
+        voicePitch = prefs.getFloat("voicePitch", 1.0f),
+        voiceChatty = prefs.getBoolean("voiceChatty", true),
+        voiceFollowUps = prefs.getInt("voiceFollowUps", 2),
     )
 }

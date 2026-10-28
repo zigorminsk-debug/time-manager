@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -65,6 +66,8 @@ import com.zigorminsk.timemanager.place.PlaceMonitor
 import com.zigorminsk.timemanager.update.UpdateManager
 import com.zigorminsk.timemanager.util.CrashReporter
 import com.zigorminsk.timemanager.util.RuTime
+import com.zigorminsk.timemanager.voice.VoiceEngine
+import com.zigorminsk.timemanager.voice.VoiceService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.time.ZoneId
@@ -99,11 +102,13 @@ class MainActivity : ComponentActivity() {
         intent ?: return
         intent.getStringExtra(Notifications.EXTRA_TASK_ID)?.let { openTask.value = it }
         intent.getStringExtra("open_tab")?.let { openTab.value = it }
+        if (intent.getBooleanExtra("open_voice", false)) openVoice.value = true
     }
 
     companion object {
         val openTask = MutableStateFlow<String?>(null)
         val openTab = MutableStateFlow<String?>(null)
+        val openVoice = MutableStateFlow(false)
     }
 }
 
@@ -139,6 +144,27 @@ fun AppRoot() {
     val scope = rememberCoroutineScope()
     val currentTab = Tab.entries.firstOrNull { it.name == tab } ?: Tab.TODAY
 
+    val voiceState by VoiceEngine.state.collectAsState()
+    var voiceOpen by rememberSaveable { mutableStateOf(false) }
+    val micLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            voiceOpen = true
+            VoiceEngine.open(context)
+        } else {
+            scope.launch { snackbar.showSnackbar("Без микрофона голосовой помощник не услышит команду") }
+        }
+    }
+    val openAssistant: () -> Unit = {
+        if (VoiceEngine.hasMicrophone(context)) {
+            voiceOpen = true
+            VoiceEngine.open(context)
+        } else {
+            micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
     // При первом запуске просим уведомления и геолокацию
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -165,9 +191,22 @@ fun AppRoot() {
         AppGraph.repo.taskById(id)?.let { editing = it; editorOpen = true }
         MainActivity.openTask.value = null
     }
+    val voiceRequest by MainActivity.openVoice.collectAsState()
+    LaunchedEffect(voiceRequest) {
+        if (voiceRequest) {
+            openAssistant()
+            MainActivity.openVoice.value = false
+        }
+    }
     val tabRequest by MainActivity.openTab.collectAsState()
     LaunchedEffect(tabRequest) {
-        if (tabRequest == "places") tab = Tab.PLACES.name
+        when (tabRequest) {
+            "places" -> tab = Tab.PLACES.name
+            "settings" -> tab = Tab.SETTINGS.name
+            "archive" -> tab = Tab.ARCHIVE.name
+            "all" -> tab = Tab.ALL.name
+            "today" -> tab = Tab.TODAY.name
+        }
         MainActivity.openTab.value = null
     }
     LaunchedEffect(Unit) {
@@ -201,6 +240,11 @@ fun AppRoot() {
                 TopAppBar(
                     title = {
                         Text(currentTab.title, fontWeight = FontWeight.SemiBold)
+                    },
+                    actions = {
+                        IconButton(onClick = openAssistant) {
+                            Icon(AppIcons.Mic, contentDescription = "Голосовой помощник")
+                        }
                     },
                 )
             },
@@ -281,6 +325,7 @@ fun AppRoot() {
                             AppGraph.speaker.speak(text, settings.speechRate)
                         },
                         onStopSpeaking = { AppGraph.speaker.stop() },
+                        onVoiceAssistant = openAssistant,
                         header = {
                             if (!notificationsEnabled(context)) {
                                 PermissionCard(
@@ -379,6 +424,7 @@ fun AppRoot() {
                                 settings.speechRate,
                             )
                         },
+                        onOpenAssistant = openAssistant,
                         onMessage = { scope.launch { snackbar.showSnackbar(it) } },
                     )
                 }
@@ -468,6 +514,35 @@ fun AppRoot() {
                     Notifications.cancelTask(context, task.id)
                 },
                 onDismiss = { deleting = null },
+            )
+        }
+
+        if (voiceOpen) {
+            VoiceAssistantOverlay(
+                state = voiceState,
+                micGranted = VoiceEngine.hasMicrophone(context),
+                onClose = {
+                    voiceOpen = false
+                    VoiceEngine.close()
+                },
+                onMic = { VoiceEngine.pushToTalk(context) },
+                onStop = { VoiceEngine.interrupt() },
+                onSend = { text -> VoiceEngine.sendText(context, text) },
+                onToggleHandsFree = { enabled ->
+                    AppGraph.settings.update { it.copy(voiceHandsFree = enabled) }
+                    if (enabled) {
+                        if (VoiceEngine.hasMicrophone(context)) {
+                            VoiceService.start(context)
+                            scope.launch { snackbar.showSnackbar("Скажите «${settings.wakePhrase}…» — я слушаю") }
+                        } else {
+                            micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    } else {
+                        VoiceService.stop(context)
+                    }
+                },
+                onHint = { text -> VoiceEngine.sendText(context, text) },
+                onRequestMic = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) },
             )
         }
     }

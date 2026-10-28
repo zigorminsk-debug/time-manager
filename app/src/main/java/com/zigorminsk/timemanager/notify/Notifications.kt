@@ -23,10 +23,12 @@ object Notifications {
     const val CH_PLACE = "place"
     const val CH_SERVICE = "place_service"
     const val CH_UPDATES = "updates"
+    const val CH_VOICE = "voice_service"
 
     const val ID_SERVICE = 900_001
     const val ID_UPDATE_AVAILABLE = 900_002
     const val ID_UPDATE_READY = 900_003
+    const val ID_VOICE_SERVICE = 900_004
 
     const val EXTRA_TASK_ID = "task_id"
     const val EXTRA_MINUTES = "minutes"
@@ -66,7 +68,15 @@ object Notifications {
             description = "Новые версии приложения"
         }
 
-        nm.createNotificationChannels(listOf(reminders, place, service, updates))
+        val voice = NotificationChannel(
+            CH_VOICE, "Голосовой помощник", NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = "Уведомление, пока приложение ждёт фразу «Слушай, Тайм»"
+            setShowBadge(false)
+            setSound(null, null)
+        }
+
+        nm.createNotificationChannels(listOf(reminders, place, service, updates, voice))
     }
 
     fun taskNotificationId(taskId: String): Int = 10_000 + (taskId.hashCode() and 0x0FFFFFFF)
@@ -209,6 +219,55 @@ object Notifications {
             .setContentIntent(install)
             .addAction(R.drawable.ic_open, "Установить", install)
         runCatching { NotificationManagerCompat.from(context).notify(ID_UPDATE_READY, builder.build()) }
+    }
+
+    /** Уведомление foreground-сервиса, который слушает фразу-обращение. */
+    fun voiceServiceNotification(
+        context: Context,
+        title: String,
+        text: String,
+        listening: Boolean,
+    ): Notification {
+        val open = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("open_voice", true)
+        }
+        val openIntent = PendingIntent.getActivity(
+            context,
+            900_011,
+            open,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val stopIntent = PendingIntent.getService(
+            context,
+            900_012,
+            Intent(context, com.zigorminsk.timemanager.voice.VoiceService::class.java)
+                .setAction(com.zigorminsk.timemanager.voice.VoiceService.ACTION_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Builder(context, CH_VOICE)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setOngoing(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setContentIntent(openIntent)
+            .addAction(R.drawable.ic_open, "Открыть", openIntent)
+            .addAction(R.drawable.ic_done, "Выключить", stopIntent)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
+    }
+
+    fun showVoiceService(context: Context, title: String, text: String, listening: Boolean) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        runCatching {
+            NotificationManagerCompat.from(context).notify(
+                ID_VOICE_SERVICE,
+                voiceServiceNotification(context, title, text, listening),
+            )
+        }
     }
 
     // ------------------------------------------------------------ PendingIntent-ы
